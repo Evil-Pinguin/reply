@@ -144,6 +144,7 @@ export class ChatBrain {
     this.season = getSeason();       // текущий сезон живого мира
     this.chapter = chapterFor(character.id); // глава истории отношений
     this.aiQuiet = false;      // после сбоя внешнего ИИ не долбим сервер
+    this.aiQuietAt = 0;        // время последней неудачной попытки (ретрай раз в 2 мин)
     this.dead = false;
     this._usedIdx = {};        // чтобы не повторять фразы подряд
   }
@@ -173,8 +174,11 @@ export class ChatBrain {
   }
 
   // ── внешний ИИ (Groq) с тихим фолбэком ────────────────────────────────────
+  // после неудачи «затихаем», но раз в ~2 минуты пробуем снова:
+  // если ключ добавили/эндпоинт ожил — ИИ подхватывается без перезагрузки
   async _tryAI(text) {
-    if (this.aiQuiet || !aiEnabled()) return null;
+    if (!aiEnabled()) return null;
+    if (this.aiQuiet && Date.now() - this.aiQuietAt < 120000) return null;
     const reply = await askAI({
       character: this.char,
       location: this.loc,
@@ -184,13 +188,19 @@ export class ChatBrain {
       history: this.history,
       text,
     });
-    if (reply) return reply;
-    this.aiQuiet = true; // ключа нет или сервер недоступен — остаёмся на локальном мозге
+    if (reply) {
+      this.aiQuiet = false;
+      this.aiQuietAt = 0;
+      return reply;
+    }
+    this.aiQuiet = true;
+    this.aiQuietAt = Date.now(); // ключа нет или сервер недоступен — локальный мозг
     return null;
   }
 
   async _tryAIInitiative() {
-    if (this.aiQuiet || !aiEnabled()) return null;
+    if (!aiEnabled()) return null;
+    if (this.aiQuiet && Date.now() - this.aiQuietAt < 120000) return null;
     const reply = await askAI({
       character: this.char,
       location: this.loc,
@@ -200,8 +210,13 @@ export class ChatBrain {
       history: this.history,
       initiative: true,
     });
-    if (reply) return reply;
+    if (reply) {
+      this.aiQuiet = false;
+      this.aiQuietAt = 0;
+      return reply;
+    }
     this.aiQuiet = true;
+    this.aiQuietAt = Date.now();
     return null;
   }
 

@@ -14,12 +14,13 @@
 
 const MODE_KEY = 'reply_ai_mode_v1'; // 'groq' | 'off'
 const AI_FLAG_KEY = 'reply_ai_used_v1';
-const LATCH_KEY = 'reply_ai_latch_v1'; // '1' — эндпоинт недоступен в этой сессии
+const LATCH_KEY = 'reply_ai_latch_v1'; // timestamp — до какого момента не пробуем эндпоинт
+const LATCH_MS = 60 * 1000;            // мёртвый эндпоинт не трогаем 1 минуту
 
-// Защёлка в памяти: localStorage может быть недоступен (iframe-превью
-// блокирует storage) — тогда модуль помнит результат в рамках загрузки
-// страницы и не долбит мёртвый эндпоинт каждым сообщением.
-let memLatched = false;
+// Временная защёлка в памяти + localStorage (если доступен). Нужна, чтобы
+// мёртвый /api/ai не долбился каждым сообщением, но при этом оживший
+// эндпоинт (или добавленный ключ) подхватывался без перезагрузки страницы.
+let memLatchUntil = 0;
 
 export function getAIMode() {
   try {
@@ -48,13 +49,22 @@ export function aiWasUsed() {
 }
 
 function latchUnavailable() {
-  memLatched = true;
-  try { localStorage.setItem(LATCH_KEY, '1'); } catch (e) { /* ignore */ }
+  memLatchUntil = Date.now() + LATCH_MS;
+  try { localStorage.setItem(LATCH_KEY, String(memLatchUntil)); } catch (e) { /* ignore */ }
+}
+
+function clearLatch() {
+  memLatchUntil = 0;
+  try { localStorage.removeItem(LATCH_KEY); } catch (e) { /* ignore */ }
 }
 
 function isLatched() {
-  if (memLatched) return true;
-  try { return localStorage.getItem(LATCH_KEY) === '1'; } catch (e) { return false; }
+  if (Date.now() < memLatchUntil) return true;
+  try {
+    const t = Number(localStorage.getItem(LATCH_KEY));
+    if (t > Date.now()) return true;
+  } catch (e) { /* ignore */ }
+  return false;
 }
 
 function parseReply(data) {
@@ -155,9 +165,10 @@ export async function askAI({ character, location, season, chapter, user, histor
 
   if (reply === 'no_key') return null;      // сервер жив, ключа нет — не защёлкиваем
   if (reply) {
+    clearLatch();
     markAIUsed();
     return reply;
   }
-  latchUnavailable(); // эндпоинт недоступен — больше не пробуем в этой сессии
+  latchUnavailable(); // эндпоинт недоступен — не пробуем минуту
   return null;
 }
