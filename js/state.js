@@ -1,6 +1,7 @@
 // ─── Reply · состояние и сохранение ─────────────────────────────────────────
 
 import { CHARACTERS, shuffle } from './data.js';
+import { getSeason } from './seasons.js';
 
 const KEY = 'reply_state_v1';
 
@@ -33,6 +34,15 @@ function defaultState() {
     achievements: [],
     streak: 0,
     lastDateDay: null,
+    collections: {       // коллекции: собранные предметы живой вселенной
+      locations: [],     // id локаций, где были свидания
+      dishes: [],        // названия заказанных блюд
+      activities: [],    // id использованных активностей
+      chars: [],         // id заметченных персонажей
+      seasons: [],       // id сезонов, в которые проходили свидания
+      photos: 0,         // число совместных фото
+    },
+    story: {},           // charId -> {chapter, since} — текущая глава истории
   };
 }
 
@@ -122,6 +132,7 @@ export function swipe(id, dir) {
   if (dir === 'like') {
     if (!state.matched.includes(id)) state.matched.push(id);
     if (!state.activeMatch) state.activeMatch = id;
+    collect('chars', id);
   }
   save();
   return state.matched.includes(id);
@@ -213,6 +224,9 @@ export function finishDate({ planId, durationMin, stats, orders, activitiesUsed,
   };
   state.dates.push(dateRec);
   state.memories.unshift({ id: 'm' + Date.now(), type: 'date', dateId: dateRec.id, ts: d.toISOString() });
+  collect('locations', p.locationId);
+  collect('seasons', getSeason().id);
+  (p.activities || []).forEach((a) => collect('activities', a));
   state.planned = state.planned.filter((x) => x.id !== p.id);
   if (state.activeMatch === charId) state.activeMatch = nextUpcoming()?.charId || null;
   const today = todayStr();
@@ -250,6 +264,44 @@ export function unlock(id) {
     return true;
   }
   return false;
+}
+
+// ─── Коллекции ──────────────────────────────────────────────────────────────
+// collect('locations', locId) — массивы дедуплицируются;
+// collect('photos') — без значения: просто счётчик.
+
+export function collect(kind, value) {
+  const c = state.collections;
+  if (!c) { state.collections = defaultState().collections; return false; }
+  if (kind === 'photos') {
+    c.photos = (c.photos || 0) + 1;
+    save();
+    return true;
+  }
+  const arr = c[kind];
+  if (!Array.isArray(arr)) return false;
+  if (!arr.includes(value)) {
+    arr.push(value);
+    save();
+    return true;
+  }
+  return false;
+}
+
+export function collectionCount() {
+  const c = state.collections || {};
+  return (c.locations?.length || 0) + (c.dishes?.length || 0) + (c.activities?.length || 0) + (c.chars?.length || 0) + (c.seasons?.length || 0) + (c.photos || 0);
+}
+
+// ─── Главы истории ──────────────────────────────────────────────────────────
+// фиксирует текущую главу для персонажа; возвращает { changed, chapter }
+export function setChapter(charId, chapter) {
+  const prev = state.story?.[charId];
+  const cur = prev && prev.chapter;
+  if (cur === chapter) return { changed: false, chapter };
+  state.story = { ...(state.story || {}), [charId]: { chapter, since: Date.now() } };
+  save();
+  return { changed: !cur, chapter };
 }
 
 export function relationOf(charId) {

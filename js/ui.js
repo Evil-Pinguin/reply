@@ -9,13 +9,16 @@ import {
   planDate, hasPlanFor, planConflict, getPlan, removePlan, nextUpcoming,
   plannedDateTime, finishDate, addDiary, addLetter,
   addGallery, unlock, relationOf, compatibilityWith, togglePremium, resetAll,
-  refreshDeck, save,
+  refreshDeck, save, collect, setChapter, collectionCount,
 } from './state.js';
 import { sound } from './audio.js';
 import { floatEmoji, burstHearts, confetti } from './effects.js';
 import { DateScene } from './scene.js';
 import { ChatBrain, ChatPanel } from './chat.js';
 import { drawShareCard, drawDatePhoto } from './cards.js';
+import { SEASONS, getSeason } from './seasons.js';
+import { CHAPTERS, chapterProgress, chapterFor } from './chapters.js';
+import { getAIMode, setAIMode, aiWasUsed } from './ai.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -396,7 +399,8 @@ function shell(contentHtml) {
       <nav class="bottom-nav">
         <button data-tab="discover" class="nav-btn on"><span>🧭</span><em>Люди</em></button>
         <button data-tab="dates" class="nav-btn"><span>📅</span><em>Свидания</em></button>
-        <button data-tab="memories" class="nav-btn"><span>📖</span><em>Воспоминания</em></button>
+        <button data-tab="memories" class="nav-btn"><span>📖</span><em>История</em></button>
+        <button data-tab="collections" class="nav-btn"><span>🎁</span><em>Коллекции</em></button>
         <button data-tab="profile" class="nav-btn"><span>👤</span><em>Профиль</em></button>
       </nav>
     </div>`;
@@ -416,7 +420,7 @@ function renderMain(opts = {}) {
       renderMain({ tab: currentTab });
     });
   });
-  const renders = { discover: tabDiscover, dates: tabDates, memories: tabMemories, profile: tabProfile };
+  const renders = { discover: tabDiscover, dates: tabDates, memories: tabMemories, collections: tabCollections, profile: tabProfile };
   (renders[tab] || tabDiscover)(tc);
 }
 
@@ -940,10 +944,11 @@ function renderDate(opts = {}) {
 
   const scene = new DateScene(sceneWrap, { location: loc, user: st.user, character: ch });
   const brain = new ChatBrain({
-    character: ch, location: loc, activities: p.activities,
+    character: ch, location: loc, activities: p.activities, user: st.user,
     onPartnerSays: (text, o) => partnerSays(text, o),
     onSystem: (t) => panel.addMessage('partner', t, { kind: 'system' }),
     onStats: () => { /* прогресс накапливается в brain.stats */ },
+    onPropose: (activityId) => runActivity(activityId),
   });
 
   const panel = new ChatPanel(chatWrap, {
@@ -959,6 +964,7 @@ function renderDate(opts = {}) {
       panel.addMessage('user', '🎤 Голосовое сообщение', {});
       brain.userVoice();
     },
+    onPropose: (activityId) => runActivity(activityId),
   });
 
   const START = Date.now();
@@ -986,13 +992,19 @@ function renderDate(opts = {}) {
     }
   }, 1000);
 
+  let aiNoted = false;
   function partnerSays(text, o) {
     panel.typing(true);
     scene.setTyping(true);
     setTimeout(() => {
       panel.typing(false);
       scene.setTyping(false);
-      panel.addMessage('partner', text, { emote: o.emoji, kind: o.kind });
+      if (o.ai && !aiNoted) {
+        aiNoted = true;
+        panel.addMessage('partner', '✨ Ответы генерирует внешний ИИ (Groq)', { kind: 'system' });
+        maybeUnlock('ai_talk');
+      }
+      panel.addMessage('partner', text, { emote: o.emoji, kind: o.kind, ai: o.ai });
       scene.emote('partner', o.emote || 'happy');
       if (o.emoji) scene.reactionEmoji('partner', o.emoji);
       sound.receive();
@@ -1049,6 +1061,7 @@ function renderDate(opts = {}) {
       panel.addMessage('partner', 'Ваш заказ на столе!', { kind: 'system' });
       brain.orderFood(item);
       moments.orders.push({ emoji: item.emoji, name: item.name });
+      collect('dishes', item.name);
       maybeUnlock('first_order');
     });
   }
@@ -1161,6 +1174,7 @@ function renderDate(opts = {}) {
           $('.ph-img', getSheet()).src = url;
           $('#phSave', getSheet()).addEventListener('click', () => {
             addGallery(url, `${loc.emoji} Свидание с ${ch.name}`);
+            collect('photos');
             maybeUnlock('photo');
             brain.photoDone();
             getSheet().innerHTML = '';
@@ -1213,6 +1227,16 @@ function renderDate(opts = {}) {
       moments: moments,
       topics: [...brain.topics],
     });
+    // глава истории: зафиксировать и поздравить, если открылась новая
+    const prog = chapterProgress(p.charId);
+    const storyRes = setChapter(p.charId, prog.chapter.id);
+    if (storyRes.changed) {
+      maybeUnlock('chapter');
+      toast(`📖 Новая глава: ${prog.chapter.emoji} ${prog.chapter.name}`, '📖');
+    }
+    // коллекции: порог предметов и сезоны
+    if (collectionCount() >= 10) maybeUnlock('collector');
+    if ((getState().collections?.seasons?.length || 0) >= 2) maybeUnlock('season_traveler');
     const ch2 = getChar(p.charId);
     addDiary(ch2.diary[0], '😌');
     addLetter(p.charId, ch2.letter);
@@ -1412,9 +1436,29 @@ function tabDates(tc) {
 function tabMemories(tc) {
   const st = getState();
   let html = `<header class="topbar"><div class="tb-logo">Reply<span class="tb-dot"></span></div><div class="tb-right"><span class="streak">🔥 ${st.streak}</span></div></header>
-  <h2 class="page-title">📖 Воспоминания</h2>`;
+  <h2 class="page-title">📖 История</h2>`;
 
-  if (!st.memories.length && !st.diary.length && !st.letters.length) {
+  // главы истории отношений: у каждого заметченного персонажа своя
+  const matchedChars = st.matched.map((id) => getChar(id)).filter(Boolean);
+  if (matchedChars.length) {
+    html += `<h3 class="sec-title">Главы истории</h3><div class="chapters-list">`;
+    matchedChars.forEach((ch) => {
+      const prog = chapterProgress(ch.id);
+      const ch2 = chapterFor(ch.id);
+      html += `
+        <div class="chapter-card" data-chapter-card="${ch.id}">
+          <div class="chp-avatar">${ch.avatarImg ? `<img src="${ch.avatarImg}" alt="">` : ch.avatarEmoji}</div>
+          <div class="chp-info">
+            <b>${esc(ch.name)} · ${ch2.emoji} ${esc(ch2.name)}</b>
+            <div class="chp-bar"><i style="width:${prog.percent}%"></i></div>
+            <small>${prog.next ? `До главы «${esc(prog.next.name)}» — ${prog.next.need - prog.score} баллов` : 'История пройдена 💞'}</small>
+          </div>
+        </div>`;
+    });
+    html += `</div>`;
+  }
+
+  if (!st.memories.length && !st.diary.length && !st.letters.length && !matchedChars.length) {
     html += `<div class="empty-state">
       <div class="es-emoji">💌</div>
       <h3>Пока нет воспоминаний</h3>
@@ -1470,6 +1514,79 @@ function tabMemories(tc) {
   }
 
   // клики по письмам обрабатываются делегированием (attachDelegated)
+  tc.innerHTML = html;
+}
+
+// ─── ТАБ: КОЛЛЕКЦИИ ─────────────────────────────────────────────────────────
+
+function tabCollections(tc) {
+  const st = getState();
+  const col = st.collections || {};
+  const locTotal = LOCATIONS.length;
+  const actTotal = ACTIVITIES.length;
+  const dishTotal = LOCATIONS.reduce((n, l) => n + (l.menu?.length || 0), 0);
+  const charTotal = CHARACTERS.length;
+  const seasonTotal = SEASONS.length;
+
+  const collItem = (emoji, name, on) => `
+    <div class="coll-item ${on ? 'on' : 'off'}">
+      <span class="ci-emoji">${emoji}</span><span class="ci-name">${esc(name)}</span>
+      ${on ? '' : '<span class="ci-lock">🔒</span>'}
+    </div>`;
+
+  let html = `
+    <header class="topbar"><div class="tb-logo">Reply<span class="tb-dot"></span></div>
+      <div class="tb-right"><span class="streak">🔥 ${st.streak}</span></div>
+    </header>
+    <h2 class="page-title">🎁 Коллекции</h2>
+    <div class="coll-summary">
+      <div class="coll-total">${collectionCount()}<small>предметов собрано</small></div>
+      <div class="coll-tags">
+        <span>📍 ${col.locations?.length || 0}/${locTotal}</span>
+        <span>🍽 ${col.dishes?.length || 0}/${dishTotal}</span>
+        <span>🎮 ${col.activities?.length || 0}/${actTotal}</span>
+        <span>📸 ${col.photos || 0}</span>
+      </div>
+    </div>`;
+
+  // места свиданий
+  html += `<h3 class="sec-title">Места свиданий</h3><div class="coll-grid">`;
+  LOCATIONS.forEach((l) => {
+    html += collItem(l.emoji, l.name, (col.locations || []).includes(l.id));
+  });
+  html += `</div>`;
+
+  // времена года
+  html += `<h3 class="sec-title">Времена года <small class="sec-hint">свидание в каждый сезон</small></h3><div class="coll-grid seasons">`;
+  SEASONS.forEach((s) => {
+    html += collItem(s.emoji, s.name, (col.seasons || []).includes(s.id));
+  });
+  html += `</div>`;
+
+  // блюда
+  html += `<h3 class="sec-title">Блюда и напитки</h3><div class="coll-grid dishes">`;
+  LOCATIONS.forEach((l) => {
+    (l.menu || []).forEach((m) => {
+      html += collItem(m.emoji, m.name, (col.dishes || []).includes(m.name));
+    });
+  });
+  html += `</div>`;
+
+  // активности
+  html += `<h3 class="sec-title">Активности</h3><div class="coll-grid activities">`;
+  ACTIVITIES.forEach((a) => {
+    html += collItem(a.emoji, a.name, (col.activities || []).includes(a.id));
+  });
+  html += `</div>`;
+
+  // персонажи
+  html += `<h3 class="sec-title">Персонажи</h3><div class="coll-grid chars">`;
+  CHARACTERS.forEach((c) => {
+    html += collItem(c.avatarEmoji || '👤', c.name, (col.chars || []).includes(c.id));
+  });
+  html += `</div>`;
+
+  html += `<div class="empty-note">Коллекции пополняются сами: ходите на свидания, заказывайте блюда, пробуйте активности и фотографируйтесь 📸</div>`;
   tc.innerHTML = html;
 }
 
@@ -1720,9 +1837,11 @@ function openSettings() {
       <div class="sheet-handle"></div>
       <div class="sheet-title">Настройки</div>
       <div class="set-row"><span>🔊 Звуки</span><button class="toggle ${st.sound ? 'on' : ''}" id="setSound"></button></div>
+      <div class="set-row"><span>🤖 ИИ-собеседник (Groq)</span><button class="toggle ${getAIMode() !== 'off' ? 'on' : ''}" id="setAI"></button></div>
+      <p class="prem-fine">ИИ подключён, если у dev-сервера есть ключ Groq (GROQ_API_KEY или groq_key.txt). Без ключа чат работает на локальном «мозге».</p>
       <div class="set-row"><span>👑 Premium</span><b style="color:#fbbf24">${st.premium ? 'активна' : 'нет'}</b></div>
       <button class="btn btn-ghost" id="setReset">Сбросить все данные</button>
-      <p class="prem-fine">Reply v0.9 · интерактивный симулятор первого свидания</p>
+      <p class="prem-fine">Reply v1.0 · интерактивный симулятор первого свидания · живой мир + внешний ИИ</p>
     </div>`;
   app.appendChild(sheet);
   $('.overlay', sheet).addEventListener('click', () => sheet.remove());
@@ -1731,6 +1850,11 @@ function openSettings() {
     save();
     $('#setSound', sheet).classList.toggle('on', st.sound);
     if (st.sound) sound.pop();
+  });
+  $('#setAI', sheet).addEventListener('click', () => {
+    setAIMode(getAIMode() !== 'off' ? 'off' : 'groq');
+    $('#setAI', sheet).classList.toggle('on', getAIMode() !== 'off');
+    toast(getAIMode() !== 'off' ? 'Внешний ИИ включён' : 'Внешний ИИ выключен', '🤖');
   });
   $('#setReset', sheet).addEventListener('click', () => {
     if (confirm('Точно сбросить весь прогресс?')) {

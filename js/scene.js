@@ -2,6 +2,7 @@
 
 import { Particles } from './effects.js';
 import { sound } from './audio.js';
+import { getSeason } from './seasons.js';
 
 function h(tag, cls, text) {
   const el = document.createElement(tag);
@@ -48,9 +49,19 @@ export class DateScene {
     this.sky.style.background = `linear-gradient(180deg, ${location.sky.join(', ')})`;
     this.container.appendChild(this.sky);
 
+    // сезон живого мира: лёгкий тон + бейдж
+    this.season = getSeason();
+    const tint = h('div', 'scene-season');
+    tint.style.background = `radial-gradient(120% 80% at 50% 0%, ${this.season.glow}, transparent 60%)`;
+    this.container.appendChild(tint);
+    const chip = h('div', 'season-chip');
+    chip.innerHTML = `${this.season.emoji} ${this.season.name}`;
+    chip.title = 'Сейчас за окном';
+    this.container.appendChild(chip);
+
     // солнце / луна
     this.heaven = h('div', 'scene-heaven');
-    const sun = location.weather === 'snow' ? '🌙' : (location.weather === 'stars' ? '🌙' : '☀️');
+    const sun = location.weather === 'snow' ? '🌙' : (location.weather === 'stars' ? '🌙' : this.season.heaven || '☀️');
     this.heaven.textContent = sun;
     this.container.appendChild(this.heaven);
 
@@ -122,6 +133,9 @@ export class DateScene {
     };
     if (weatherMap[location.weather]) {
       this.particles = new Particles(this.container, weatherMap[location.weather]);
+    } else if (this.season.particles) {
+      // у локаций без своей погоды — сезонные частицы (лепестки/листья/снег)
+      this.particles = new Particles(this.container, this.season.particles, { count: 40 });
     }
 
     // реклама «сейчас играет»

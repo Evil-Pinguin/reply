@@ -3,6 +3,9 @@
 import { BOT, QUESTIONS, TRIVIA, ACTIVITIES as ACTS_LIST, rand, rnd } from './data.js';
 import { relationOf } from './state.js';
 import { sound } from './audio.js';
+import { getSeason, seasonLine } from './seasons.js';
+import { chapterFor, chapterLine } from './chapters.js';
+import { askAI, aiEnabled } from './ai.js';
 
 const ACTS = new Map(ACTS_LIST.map((a) => [a.id, a]));
 
@@ -114,14 +117,16 @@ const GENERIC_TOPIC = {
 // ─── Генеративный мозг собеседника ──────────────────────────────────────────
 
 export class ChatBrain {
-  constructor({ character, location, activities, onPartnerSays, onSystem, onStats, onVoice }) {
+  constructor({ character, location, activities, user, onPartnerSays, onSystem, onStats, onVoice, onPropose }) {
     this.char = character;
     this.loc = location;
     this.activities = activities || [];
+    this.user = user || null;
     this.onPartnerSays = onPartnerSays;
     this.onSystem = onSystem;
     this.onStats = onStats;
     this.onVoice = onVoice;
+    this.onPropose = onPropose;
     this.stats = { trust: 0, comfort: 0, humor: 0, sympathy: 0, romance: 0 };
     this.topics = new Set();
     this.usedQuestions = [];
@@ -134,6 +139,12 @@ export class ChatBrain {
     this.rel = relationOf(character.id);
     this.memoryUsed = false;
     this.memory = [];          // память разговора {role,text,topics,kw}
+    this.history = [];         // полный диалог {role:'user'|'assistant', text} для внешнего ИИ
+    this.usedActivities = new Set(); // активности, уже предложенные/запущенные
+    this.season = getSeason();       // текущий сезон живого мира
+    this.chapter = chapterFor(character.id); // глава истории отношений
+    this.aiQuiet = false;      // после сбоя внешнего ИИ не долбим сервер
+    this.dead = false;
     this._usedIdx = {};        // чтобы не повторять фразы подряд
   }
 
@@ -151,8 +162,47 @@ export class ChatBrain {
   }
 
   _say(text, opts = {}) {
+    if (this.dead) return;
+    // ведём полный диалог для внешнего ИИ (системные заметки не записываем)
+    if (opts.record !== false) {
+      this.history.push({ role: 'assistant', text });
+      if (this.history.length > 40) this.history = this.history.slice(-40);
+    }
     const delay = opts.delay !== undefined ? opts.delay : this._delay(text);
     this.onPartnerSays(text, { ...opts, delay });
+  }
+
+  // ── внешний ИИ (Groq) с тихим фолбэком ────────────────────────────────────
+  async _tryAI(text) {
+    if (this.aiQuiet || !aiEnabled()) return null;
+    const reply = await askAI({
+      character: this.char,
+      location: this.loc,
+      season: this.season,
+      chapter: this.chapter,
+      user: this.user,
+      history: this.history,
+      text,
+    });
+    if (reply) return reply;
+    this.aiQuiet = true; // ключа нет или сервер недоступен — остаёмся на локальном мозге
+    return null;
+  }
+
+  async _tryAIInitiative() {
+    if (this.aiQuiet || !aiEnabled()) return null;
+    const reply = await askAI({
+      character: this.char,
+      location: this.loc,
+      season: this.season,
+      chapter: this.chapter,
+      user: this.user,
+      history: this.history,
+      initiative: true,
+    });
+    if (reply) return reply;
+    this.aiQuiet = true;
+    return null;
   }
 
   _emojiLine(text) {
@@ -195,6 +245,13 @@ export class ChatBrain {
     if (content) {
       parts.push(this._emojiLine(content));
       this.topics.add(top.id);
+    }
+
+    // живой мир: иногда заметить сезон или главу истории
+    if (chance(0.1) && !(top && top.id === 'weather')) {
+      parts.push(this._emojiLine(seasonLine()));
+    } else if (chance(0.08)) {
+      parts.push(this._emojiLine(chapterLine(this.char.id).line));
     }
 
     // если пользователь поделился личным — отреагировать с интересом
@@ -250,7 +307,7 @@ export class ChatBrain {
     return false;
   }
 
-  userSaid(raw) {
+  async userSaid(raw) {
     const text = raw.trim();
     if (!text) return;
     this.msgCount++;
@@ -259,6 +316,8 @@ export class ChatBrain {
     const a = analyze(text);
     this.memory.push({ role: 'user', text, topics: a.topics, kw: a.keywords });
     if (this.memory.length > 24) this.memory.shift();
+    this.history.push({ role: 'user', text });
+    if (this.history.length > 40) this.history = this.history.slice(-40);
 
     // ── интенты (короткие живые реакции) ──
     if (INTENT_RE.joke.test(text)) {
@@ -345,13 +404,18 @@ export class ChatBrain {
       return;
     }
 
-    // ── генеративный ответ ──
-    const reply = this._compose(a, text);
-    const emote = a.negative ? 'shy' : a.positive ? 'happy' : a.isQuestion ? 'think' : 'happy';
-    this._say(this._emojiLine(reply), { emote });
+    // ── генеративный ответ: сначала внешний ИИ (Groq), фолбэк — локальный мозг ──
+    let reply = await this._tryAI(text);
+    if (reply !== null) {
+      this._say(this._emojiLine(reply), { emote: a.negative ? 'shy' : a.positive ? 'happy' : a.isQuestion ? 'think' : 'happy', ai: true });
+    } else {
+      const local = this._compose(a, text);
+      const emote = a.negative ? 'shy' : a.positive ? 'happy' : a.isQuestion ? 'think' : 'happy';
+      this._say(this._emojiLine(local), { emote });
+      // иногда вернуться к тому, о чём говорили раньше
+      if (chance(0.18)) this._remember(a);
+    }
     this._scheduleSecond(a);
-    // иногда вернуться к тому, о чём говорили раньше
-    if (chance(0.18)) this._remember(a);
   }
 
   // вторая короткая реплика — как живой человек, который дописывает
@@ -413,29 +477,99 @@ export class ChatBrain {
     };
     evLoop();
 
+    // инициативы персонажа: партнёр сам пишет, предлагает активности,
+    // вспоминает прошлое, говорит о сезоне и главе истории
     const initLoop = () => {
       const t = setTimeout(() => {
-        if (this.msgCount >= 2) {
-          const q = pick([
-            'Слушай, а какой у тебя любимый способ отдыхать?',
-            'А ты бы поехал(а) куда-нибудь прямо сейчас — если бы мог(ла)?',
-            'Расскажи что-нибудь, о чём обычно не рассказывают',
-            'Какая у тебя самая любимая пора года?',
-            'Если бы завтра был выходной на неделю — куда бы ты поехал(а)?',
-            'Что тебя может рассмешить даже в плохой день?',
-          ]);
-          this._say(this._emojiLine(q), { emote: 'think' });
-          this._addStat('comfort', 1);
-        }
+        this._initiative();
         initLoop();
-      }, 45000 + Math.random() * 50000);
+      }, 35000 + Math.random() * 45000);
       this.timers.push(t);
     };
     initLoop();
   }
 
+  _initiative() {
+    // не перебиваем активный диалог слишком часто
+    if (this.msgCount < 2) return;
+    if (this._lastInit && Date.now() - this._lastInit < 30000) return;
+    this._lastInit = Date.now();
+
+    const availActs = (this.activities || []).filter((id) => !this.usedActivities.has(id));
+    const relDates = this.rel.datesCount || 0;
+
+    const kinds = [];
+    if (availActs.length && chance(0.45)) kinds.push('proposal');
+    if (relDates > 0 && chance(0.5)) kinds.push('memory');
+    if (chance(0.35)) kinds.push('season');
+    if (this.chapter && this.chapter.id !== 'spark' && chance(0.3)) kinds.push('chapter');
+    kinds.push('spontaneous');
+    const kind = pick(kinds);
+
+    const emote = kind === 'memory' ? 'think' : kind === 'chapter' ? 'love' : 'happy';
+
+    // внешний ИИ может написать инициативу сам (кроме предложений активности:
+    // у них есть интерактивная кнопка в чате)
+    const aiPromise = kind === 'proposal' ? Promise.resolve(null) : this._tryAIInitiative();
+    aiPromise.then((aiLine) => {
+      if (this.dead) return;
+      if (aiLine) {
+        this._say(this._emojiLine(aiLine), { emote, ai: true });
+        this._addStat('comfort', 1);
+        return;
+      }
+      // локальные инициативы
+      if (kind === 'proposal') {
+        const id = pick(availActs);
+        const act = ACTS.get(id);
+        if (!act) return;
+        const pool = [
+          `Слушай, а давай ${act.name.toLowerCase()}? ${act.emoji} Я как раз об этом думал(а)`,
+          `Знаешь, что сейчас было бы идеально? ${act.name} ${act.emoji} Как думаешь?`,
+          `Мне тут пришло в голову: ${act.name.toLowerCase()} ${act.emoji} Составишь компанию?`,
+        ];
+        this._say(this._emojiLine(pick(pool)), { emote: 'think', kind: 'proposal', activityId: id, label: '💡 Давай!' });
+        this._addStat('comfort', 1);
+        return;
+      }
+      if (kind === 'memory') {
+        const pool = [
+          'Помнишь наше прошлое свидание? Я до сих пор вспоминаю, как мы смеялись',
+          'Когда вспоминаю, как мы встретились… до сих пор мурашки',
+          'Я рассказывал(а) друзьям про наше первое свидание. Они сказали, что мы слишком милые 😄',
+          'А помнишь, что ты тогда рассказывал(а)? Я запомнил(а) навсегда',
+        ];
+        this._say(this._emojiLine(pick(pool)), { emote: 'think', emoji: '💭' });
+        this._addStat('trust', 1);
+        return;
+      }
+      if (kind === 'season') {
+        this._say(this._emojiLine(seasonLine()), { emote: 'happy' });
+        this._addStat('comfort', 1);
+        return;
+      }
+      if (kind === 'chapter') {
+        const cl = chapterLine(this.char.id);
+        this._say(this._emojiLine(cl.line), { emote: 'love' });
+        this._addStat('romance', 1);
+        return;
+      }
+      // spontaneous
+      const pool = [
+        'Я сейчас поймал(а) себя на мысли, что мне хорошо. Просто хорошо, без причин',
+        'Слушай, а ты веришь в знаки? Вот наша встреча — точно знак',
+        'У меня есть вопрос, но я стесняюсь… Ладно, потом',
+        'Знаешь, что я понял(а)? С тобой даже молчать — приятно',
+        'А хочешь, потом устроим ещё одно свидание? Я уже придумал(а), куда',
+      ];
+      this._say(this._emojiLine(pick(pool)), { emote: this.person.shy > 0.3 ? 'blush' : 'happy' });
+      this._addStat('comfort', 1);
+    });
+  }
+
   // ── активности ────────────────────────────────────────────────────────────
   trigger(id) {
+    this.usedActivities.add(id);
     switch (id) {
       case 'coffee': case 'dessert': {
         const item = this.loc.menu.find((m) => (id === 'coffee' ? /кофе|латте|капучино|матча|американо|шоколад/i.test(m.name) : /десерт|торт|пирог|тирамису|чизкейк|сорбет|дайфуку|печенье/i.test(m.name))) || this.loc.menu[1];
@@ -604,6 +738,7 @@ export class ChatBrain {
   }
 
   destroy() {
+    this.dead = true;
     this.timers.forEach(clearTimeout);
   }
 }
@@ -611,7 +746,7 @@ export class ChatBrain {
 // ─── Панель чата ────────────────────────────────────────────────────────────
 
 export class ChatPanel {
-  constructor(container, { scene, brain, character, onSend, onMenu, onActivity, onExpand, onFinish, onVoice }) {
+  constructor(container, { scene, brain, character, onSend, onMenu, onActivity, onExpand, onFinish, onVoice, onPropose }) {
     this.container = container;
     this.scene = scene;
     this.brain = brain;
@@ -622,6 +757,7 @@ export class ChatPanel {
     this.onExpand = onExpand;
     this.onFinish = onFinish;
     this.onVoice = onVoice;
+    this.onPropose = onPropose;
     this.el = null;
     this.messagesEl = null;
     this.inputEl = null;
@@ -709,6 +845,20 @@ export class ChatPanel {
     if (opts.kind === 'system') {
       wrap.className = 'msg-system';
       wrap.innerHTML = `<span>${text}</span>`;
+    } else if (opts.kind === 'proposal') {
+      wrap.className = 'msg msg-partner msg-proposal';
+      wrap.innerHTML = `
+        <div class="msg-bubble proposal-bubble">
+          <div class="q-tag">💡 ${opts.tag || 'Инициатива'}</div>
+          ${text.replace(/</g, '&lt;')}
+          <button class="prop-btn">${opts.label || 'Давай!'}</button>
+        </div>`;
+      const btn = wrap.querySelector('.prop-btn');
+      btn.addEventListener('click', () => {
+        btn.disabled = true;
+        btn.textContent = '✅';
+        this.onPropose && this.onPropose(opts.activityId);
+      });
     } else if (opts.kind === 'voice') {
       wrap.innerHTML = `
         <div class="msg-bubble voice-bubble">
@@ -728,7 +878,8 @@ export class ChatPanel {
     } else if (opts.kind === 'question') {
       wrap.innerHTML = `<div class="msg-bubble"><div class="q-tag">🃏 Вопрос</div>${text}</div>`;
     } else {
-      wrap.innerHTML = `<div class="msg-bubble">${text.replace(/</g, '&lt;')}</div>`;
+      wrap.innerHTML = `<div class="msg-bubble">${text.replace(/</g, '&lt;')}${opts.ai ? '<span class="ai-tag" title="Ответ сгенерирован внешним ИИ (Groq)">✦ AI</span>' : ''}</div>`;
+      if (opts.ai) wrap.classList.add('msg-ai');
       if (opts.emoji && opts.emoji !== '👋') {
         const e = document.createElement('div');
         e.className = 'msg-reaction';
