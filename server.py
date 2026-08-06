@@ -3,18 +3,20 @@
 
 - Статика отдаётся с запретом кэширования (чтобы браузер всегда получал
   свежие CSS/JS — иначе старые версии с багами висят в кэше превью).
-- POST /api/ai — прокси к Groq API. Ключ берётся из переменной окружения
-  GROQ_API_KEY или из gitignored-файла groq_key.txt / .env. Ключ не
-  попадает ни в репозиторий, ни в браузер. Без ключа эндпоинт отвечает
-  {ok: false, error: "no_key"}, и клиент использует локальный «мозг».
+- /api/ai (POST или GET ?q=base64) — прокси к Groq API. Ключ берётся из
+  переменной окружения GROQ_API_KEY или из gitignored-файла groq_key.txt /
+  .env. Ключ не попадает ни в репозиторий, ни в браузер. Без ключа
+  эндпоинт отвечает {ok: false, error: "no_key"}, и клиент использует
+  локальный «мозг».
 """
+import base64
 import http.server
 import json
 import os
-import socket
 import socketserver
-import urllib.request
 import urllib.error
+import urllib.parse
+import urllib.request
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PORT = int(os.environ.get('PORT', 8080))
@@ -169,8 +171,42 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Expires', '0')
         super().end_headers()
 
+    # путь запроса, устойчивый к absolute-form (превью-прокси шлёт
+    # "https://host/api/ai") и к query-строкам
+    def _api_path(self):
+        try:
+            path = urllib.parse.urlsplit(self.path).path
+        except Exception:
+            path = self.path
+        return path.rstrip('/') or '/'
+
+    def _send_json(self, obj, status=200):
+        out = json.dumps(obj, ensure_ascii=False).encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(out)))
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+        self.wfile.write(out)
+
+    def do_GET(self):
+        if self._api_path() == '/api/ai':
+            payload = {}
+            try:
+                qs = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                if qs.get('q'):
+                    raw = base64.urlsafe_b64decode(qs['q'][0].encode('ascii'))
+                    payload = json.loads(raw.decode('utf-8'))
+            except Exception:
+                payload = {}
+            self._send_json(handle_ai(payload))
+            return
+        super().do_GET()
+
     def do_POST(self):
-        if self.path.split('?')[0] != '/api/ai':
+        if self._api_path() != '/api/ai':
             self.send_error(404, 'Not Found')
             return
         try:
@@ -179,17 +215,20 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
             payload = json.loads(raw.decode('utf-8') or '{}')
         except Exception:
             payload = {}
-        result = handle_ai(payload)
-        out = json.dumps(result, ensure_ascii=False).encode('utf-8')
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json; charset=utf-8')
-        self.send_header('Content-Length', str(len(out)))
-        self.end_headers()
-        self.wfile.write(out)
+        self._send_json(handle_ai(payload))
 
     def log_message(self, fmt, *args):
-        # тихие логи для /api/ai, обычные для статики
-        if self.path.startswith('/api/'):
+        try:
+            msg = fmt % args
+        except Exception:
+            msg = fmt
+        try:
+            path = urllib.parse.urlsplit(self.path).path
+        except Exception:
+            path = self.path
+        if path.startswith('/api/'):
+            # API-вызовы логируем отдельно — это помогает отлаживать превью
+            print(f'[api] {self.command} {self.path} -> {msg}', flush=True)
             return
         super().log_message(fmt, *args)
 

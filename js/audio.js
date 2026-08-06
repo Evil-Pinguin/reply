@@ -8,18 +8,36 @@ class Sound {
     this.master = null;
     this.ambientNodes = [];
     this.muted = false;
+    // контекст создаётся ТОЛЬКО после жеста пользователя (автоплей-политика):
+    // ждём первое нажатие/клавишу и инициализируемся в этот момент
+    this._boundEnsure = () => {
+      try { this.ensure(); } catch (e) { /* noop */ }
+    };
+    ['pointerdown', 'keydown', 'touchstart'].forEach((ev) => {
+      window.addEventListener(ev, this._boundEnsure, { once: true, passive: true });
+    });
   }
 
   ensure() {
     if (!this.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
-      this.ctx = new AC();
-      this.master = this.ctx.createGain();
-      this.master.gain.value = 0.9;
-      this.master.connect(this.ctx.destination);
+      try {
+        this.ctx = new AC();
+        this.master = this.ctx.createGain();
+        this.master.gain.value = 0.9;
+        this.master.connect(this.ctx.destination);
+      } catch (e) {
+        this.ctx = null;
+        return null;
+      }
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    if (this.ctx.state === 'suspended') {
+      try {
+        const p = this.ctx.resume();
+        if (p && p.catch) p.catch(() => {});
+      } catch (e) { /* noop */ }
+    }
     return this.ctx;
   }
 
@@ -30,19 +48,23 @@ class Sound {
   // простой «поп»
   blip(freq = 660, dur = 0.08, type = 'sine', vol = 0.12, slide = 0) {
     if (!this.enabled()) return;
-    const ctx = this.ensure();
-    if (!ctx) return;
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = type;
-    o.frequency.setValueAtTime(freq, ctx.currentTime);
-    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), ctx.currentTime + dur);
-    g.gain.setValueAtTime(0, ctx.currentTime);
-    g.gain.linearRampToValueAtTime(vol, ctx.currentTime + 0.012);
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
-    o.connect(g).connect(this.master);
-    o.start();
-    o.stop(ctx.currentTime + dur + 0.02);
+    // не создаём контекст здесь: до первого жеста звуков нет, и это нормально
+    // (иначе Chrome блокирует AudioContext и сыпет предупреждениями)
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    try {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, ctx.currentTime);
+      if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), ctx.currentTime + dur);
+      g.gain.setValueAtTime(0, ctx.currentTime);
+      g.gain.linearRampToValueAtTime(vol, ctx.currentTime + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+      o.connect(g).connect(this.master);
+      o.start();
+      o.stop(ctx.currentTime + dur + 0.02);
+    } catch (e) { /* noop */ }
   }
 
   pop() { this.blip(520, 0.07, 'sine', 0.1, 180); }
