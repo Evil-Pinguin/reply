@@ -16,6 +16,11 @@ const MODE_KEY = 'reply_ai_mode_v1'; // 'groq' | 'off'
 const AI_FLAG_KEY = 'reply_ai_used_v1';
 const LATCH_KEY = 'reply_ai_latch_v1'; // '1' — эндпоинт недоступен в этой сессии
 
+// Защёлка в памяти: localStorage может быть недоступен (iframe-превью
+// блокирует storage) — тогда модуль помнит результат в рамках загрузки
+// страницы и не долбит мёртвый эндпоинт каждым сообщением.
+let memLatched = false;
+
 export function getAIMode() {
   try {
     return localStorage.getItem(MODE_KEY) || 'groq';
@@ -43,10 +48,12 @@ export function aiWasUsed() {
 }
 
 function latchUnavailable() {
+  memLatched = true;
   try { localStorage.setItem(LATCH_KEY, '1'); } catch (e) { /* ignore */ }
 }
 
 function isLatched() {
+  if (memLatched) return true;
   try { return localStorage.getItem(LATCH_KEY) === '1'; } catch (e) { return false; }
 }
 
