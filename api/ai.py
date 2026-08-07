@@ -1,25 +1,19 @@
 #!/usr/bin/env python3
-"""Reply dev-server: статическая раздача + прокси для внешнего ИИ (Groq).
+"""Reply · Vercel Serverless Function: /api/ai → прокси к Groq.
 
-- Статика отдаётся с запретом кэширования (чтобы браузер всегда получал
-  свежие CSS/JS — иначе старые версии с багами висят в кэше превью).
-- /api/ai (POST или GET ?q=base64) — прокси к Groq API. Ключ берётся из
-  переменной окружения GROQ_API_KEY или из gitignored-файла groq_key.txt /
-  .env. Ключ не попадает ни в репозиторий, ни в браузер. Без ключа
-  эндпоинт отвечает {ok: false, error: "no_key"}, и клиент использует
-  локальный «мозг».
+Файл в каталоге api/ → маршрут /api/ai (класс handler(BaseHTTPRequestHandler)).
+Ключ Groq читается ТОЛЬКО из переменной окружения GROQ_API_KEY
+(задаётся в настройках проекта Vercel: Settings → Environment Variables).
+Ключ никогда не попадает в репозиторий и в браузер.
+
+Без ключа функция отвечает {ok: false, error: "no_key"} — клиент
+прозрачно переключается на локальный «мозг».
 """
-import base64
-import http.server
 import json
 import os
-import socketserver
 import urllib.error
-import urllib.parse
 import urllib.request
-
-ROOT = os.path.dirname(os.path.abspath(__file__))
-PORT = int(os.environ.get('PORT', 8080))
+from http.server import BaseHTTPRequestHandler
 
 GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 GROQ_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant']
@@ -27,26 +21,7 @@ GROQ_TIMEOUT = 30
 
 
 def load_api_key():
-    """Ключ Groq: сначала окружение, потом groq_key.txt / .env (gitignored)."""
-    env = os.environ.get('GROQ_API_KEY', '').strip()
-    if env:
-        return env
-    for path in ('groq_key.txt', '.env'):
-        try:
-            with open(path, encoding='utf-8') as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith('#'):
-                        continue
-                    if '=' in line:
-                        key, _, val = line.partition('=')
-                        if key.strip().upper() == 'GROQ_API_KEY':
-                            return val.strip().strip('"').strip("'")
-                    elif line.startswith('sk-'):
-                        return line
-        except FileNotFoundError:
-            continue
-    return None
+    return os.environ.get('GROQ_API_KEY', '').strip() or None
 
 
 def build_system_prompt(data):
@@ -103,7 +78,7 @@ def handle_ai(payload):
     key = load_api_key()
     if not key:
         return {'ok': False, 'error': 'no_key',
-                'hint': 'Задайте GROQ_API_KEY или положите ключ в groq_key.txt (см. groq_key.example.txt).'}
+                'hint': 'Задайте переменную окружения GROQ_API_KEY в настройках Vercel.'}
 
     history = payload.get('history') or []
     if not isinstance(history, list):
@@ -161,24 +136,16 @@ def handle_ai(payload):
     return {'ok': False, 'error': 'groq_error', 'detail': last_err}
 
 
-class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
-    def __init__(self, *a, **kw):
-        super().__init__(*a, directory=ROOT, **kw)
+def _read_body(handler):
+    try:
+        length = int(handler.headers.get('Content-Length') or 0)
+        return handler.rfile.read(length) if length else b'{}'
+    except Exception:
+        return b'{}'
 
-    def end_headers(self):
-        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-        self.send_header('Pragma', 'no-cache')
-        self.send_header('Expires', '0')
-        super().end_headers()
 
-    # путь запроса, устойчивый к absolute-form (превью-прокси шлёт
-    # "https://host/api/ai") и к query-строкам
-    def _api_path(self):
-        try:
-            path = urllib.parse.urlsplit(self.path).path
-        except Exception:
-            path = self.path
-        return path.rstrip('/') or '/'
+class handler(BaseHTTPRequestHandler):
+    """Vercel Python serverless function: GET/POST /api/ai."""
 
     def _send_json(self, obj, status=200):
         out = json.dumps(obj, ensure_ascii=False).encode('utf-8')
@@ -192,54 +159,26 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(out)
 
     def do_GET(self):
-        if self._api_path() == '/api/ai':
+        import base64
+        import urllib.parse
+        payload = {}
+        try:
+            qs = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            if qs.get('q'):
+                raw = base64.urlsafe_b64decode(qs['q'][0].encode('ascii'))
+                payload = json.loads(raw.decode('utf-8'))
+        except Exception:
             payload = {}
-            try:
-                qs = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-                if qs.get('q'):
-                    raw = base64.urlsafe_b64decode(qs['q'][0].encode('ascii'))
-                    payload = json.loads(raw.decode('utf-8'))
-            except Exception:
-                payload = {}
-            self._send_json(handle_ai(payload))
-            return
-        super().do_GET()
+        self._send_json(handle_ai(payload))
 
     def do_POST(self):
-        if self._api_path() != '/api/ai':
-            self.send_error(404, 'Not Found')
-            return
         try:
-            length = int(self.headers.get('Content-Length') or 0)
-            raw = self.rfile.read(length) if length else b'{}'
+            raw = _read_body(self)
             payload = json.loads(raw.decode('utf-8') or '{}')
         except Exception:
             payload = {}
         self._send_json(handle_ai(payload))
 
     def log_message(self, fmt, *args):
-        try:
-            msg = fmt % args
-        except Exception:
-            msg = fmt
-        try:
-            path = urllib.parse.urlsplit(self.path).path
-        except Exception:
-            path = self.path
-        if path.startswith('/api/'):
-            # API-вызовы логируем отдельно — это помогает отлаживать превью
-            print(f'[api] {self.command} {self.path} -> {msg}', flush=True)
-            return
-        super().log_message(fmt, *args)
-
-
-if __name__ == '__main__':
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(('0.0.0.0', PORT), NoCacheHandler) as httpd:
-        print(f'Reply server on http://0.0.0.0:{PORT} (no-cache)')
-        if load_api_key():
-            print('Groq AI: ключ найден — внешний ИИ-собеседник активен')
-        else:
-            print('Groq AI: ключ не найден — чат работает на локальном «мозге» '
-                  '(задайте GROQ_API_KEY или создайте groq_key.txt)')
-        httpd.serve_forever()
+        # тихие логи для serverless
+        pass
