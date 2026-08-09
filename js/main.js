@@ -2,8 +2,10 @@
 
 import { init } from './ui.js';
 import { sound } from './audio.js';
+import { applyTheme } from './state.js';
 
 window.addEventListener('DOMContentLoaded', () => {
+  applyTheme();
   const root = document.getElementById('app');
   init(root);
   // первый жест — инициализация аудио

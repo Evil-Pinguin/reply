@@ -1,15 +1,17 @@
 // ─── Reply · интерфейс и экраны ─────────────────────────────────────────────
 
 import {
-  APP, AVATARS, INTERESTS, GOALS, CHARACTERS, LOCATIONS, TIME_SLOTS,
+  APP, AVATARS, INTERESTS, GOALS, CITIES, MBTI_TYPES, MBTI_INFO, VALUES_LIST,
+  HABITS_LIST, DAILY_SURPRISES, CHARACTERS, LOCATIONS, TIME_SLOTS,
   ACTIVITIES, ACHIEVEMENTS as _ACH, rand, shuffle, getChar, getLoc,
 } from './data.js';
 import {
-  getState, setUser, getDeck, remainingToday, nextCard, swipe, isMatched,
+  getState, setUser, getDeck, getFilteredDeck, remainingToday, nextCard, swipe, isMatched,
   planDate, hasPlanFor, planConflict, getPlan, removePlan, nextUpcoming,
   plannedDateTime, finishDate, addDiary, addLetter,
-  addGallery, unlock, relationOf, compatibilityWith, togglePremium, resetAll,
+  addGallery, unlock, relationOf, compatibilityWith, togglePremium, setPremium, cancelPremium, resetAll,
   refreshDeck, save, collect, setChapter, collectionCount,
+  getTheme, setTheme, applyTheme, getFilters, setFilters, getDailySurprise, claimDailySurprise,
 } from './state.js';
 import { sound } from './audio.js';
 import { floatEmoji, burstHearts, confetti } from './effects.js';
@@ -196,6 +198,177 @@ function maybeUnlock(id) {
 
 // ─── SPLASH ─────────────────────────────────────────────────────────────────
 
+
+// ─── МОДАЛЬНЫЕ ОКНА: MBTI, СЮРПРИЗ, ФИЛЬТРЫ, ДОБРОЙ НОЧИ ───────────────────
+
+function openMbtiModal(type) {
+  const info = MBTI_INFO[type] || { name: type, emoji: '🧬', tag: 'Тип личности', desc: 'Уникальный психологический тип.', match: 'Все открытые типы' };
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet-layer top';
+  sheet.innerHTML = `
+    <div class="overlay"></div>
+    <div class="sheet mbti-sheet" style="padding: 20px 18px 24px;">
+      <div class="sheet-handle"></div>
+      <div style="text-align:center; padding: 6px 0 14px;">
+        <div style="font-size: 40px; margin-bottom: 4px;">${info.emoji}</div>
+        <h2 style="font-family: var(--disp); font-size: 19px; font-weight: 800; color: var(--txt);">${type} · ${esc(info.name)}</h2>
+        <div style="display:inline-block; font-size: 11.5px; font-weight: 700; color: #ff5e7e; background: rgba(255,94,126,0.15); padding: 4px 12px; border-radius: 999px; margin-top: 6px;">${esc(info.tag)}</div>
+      </div>
+      <p style="font-size: 13.5px; line-height: 1.5; color: var(--txt); margin-bottom: 14px;">${esc(info.desc)}</p>
+      <div style="padding: 12px 14px; border-radius: var(--r-sm); background: var(--card); border: 1px solid var(--stroke); margin-bottom: 18px;">
+        <div style="font-size: 10.5px; font-weight: 800; color: var(--mut); text-transform: uppercase; margin-bottom: 4px;">Идеальная совместимость</div>
+        <div style="font-size: 14px; font-weight: 700; color: #fbbf24;">💞 ${esc(info.match)}</div>
+      </div>
+      <button class="btn btn-primary" id="mbtiClose">Понятно ✨</button>
+    </div>`;
+  app.appendChild(sheet);
+  $('.overlay', sheet).addEventListener('click', () => sheet.remove());
+  $('#mbtiClose', sheet).addEventListener('click', () => sheet.remove());
+}
+
+function openDailySurprise(onClaim) {
+  const { item, claimed } = getDailySurprise();
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet-layer top';
+  sheet.innerHTML = `
+    <div class="overlay"></div>
+    <div class="sheet surprise-sheet" style="padding: 20px 18px 24px;">
+      <div class="sheet-handle"></div>
+      <div class="surprise-card">
+        <div class="surprise-emoji">${item.emoji}</div>
+        <h2 style="font-family: var(--disp); font-size: 18px; font-weight: 800; margin-bottom: 6px;">${esc(item.title)}</h2>
+        <p style="font-size: 13.5px; color: var(--txt); line-height: 1.45;">${esc(item.desc)}</p>
+        <div class="surprise-bonus">✨ ${esc(item.bonus)}</div>
+      </div>
+      ${claimed ? `
+        <p style="text-align:center; font-size: 12.5px; color: var(--mut); margin-bottom: 14px;">Вы уже забрали сегодняшний подарок. Новый сюрприз будет доступен завтра!</p>
+        <button class="btn btn-primary" id="surpClose">Отлично ✨</button>
+      ` : `
+        <button class="btn btn-primary" id="surpClaim">Забрать сюрприз 🎁</button>
+      `}
+    </div>`;
+  app.appendChild(sheet);
+  $('.overlay', sheet).addEventListener('click', () => sheet.remove());
+  $('#surpClose', sheet)?.addEventListener('click', () => sheet.remove());
+  $('#surpClaim', sheet)?.addEventListener('click', () => {
+    claimDailySurprise();
+    sound.tada();
+    confetti(app);
+    toast(`Получено: ${item.title}`, item.emoji);
+    sheet.remove();
+    if (onClaim) onClaim();
+  });
+}
+
+function openFiltersSheet(onApply) {
+  const f = { ...getFilters() };
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet-layer top';
+  sheet.innerHTML = `
+    <div class="overlay"></div>
+    <div class="sheet filter-sheet" style="padding: 20px 18px 24px;">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">🎛️ Фильтры поиска</div>
+      
+      <p class="ob-label">Кого показывать</p>
+      <div class="gender-selector" id="fltGender">
+        <button class="gender-btn ${f.gender === 'all' ? 'sel' : ''}" data-v="all">💫 Всех</button>
+        <button class="gender-btn ${f.gender === 'female' ? 'sel' : ''}" data-v="female">👩 Девушек</button>
+        <button class="gender-btn ${f.gender === 'male' ? 'sel' : ''}" data-v="male">👨 Парней</button>
+      </div>
+
+      <p class="ob-label" style="margin-top:14px;">Город</p>
+      <div class="chips-wrap" id="fltCity">
+        <button class="chip ${f.city === 'all' ? 'on' : ''}" data-v="all">Все города</button>
+        ${CITIES.map((c) => `<button class="chip ${f.city === c ? 'on' : ''}" data-v="${c}">${c}</button>`).join('')}
+      </div>
+
+      <p class="ob-label" style="margin-top:14px;">Возраст: <b id="fltAgeLabel">${f.minAge} – ${f.maxAge} лет</b></p>
+      <div style="display:flex; gap:10px; align-items:center; margin-top:4px;">
+        <input type="range" id="fltMinAge" min="18" max="35" value="${f.minAge}" style="flex:1;">
+        <input type="range" id="fltMaxAge" min="18" max="35" value="${f.maxAge}" style="flex:1;">
+      </div>
+
+      <div class="edit-actions" style="margin-top:20px;">
+        <button class="btn btn-primary" id="fltApply">Применить</button>
+        <button class="btn btn-ghost" id="fltReset">Сбросить</button>
+      </div>
+    </div>`;
+  app.appendChild(sheet);
+  $('.overlay', sheet).addEventListener('click', () => sheet.remove());
+
+  $$('#fltGender button', sheet).forEach((b) => {
+    b.addEventListener('click', () => {
+      $$('#fltGender button', sheet).forEach((x) => x.classList.remove('sel'));
+      b.classList.add('sel');
+      f.gender = b.dataset.v;
+      sound.pop();
+    });
+  });
+
+  $$('#fltCity button', sheet).forEach((b) => {
+    b.addEventListener('click', () => {
+      $$('#fltCity button', sheet).forEach((x) => x.classList.remove('on'));
+      b.classList.add('on');
+      f.city = b.dataset.v;
+      sound.pop();
+    });
+  });
+
+  const minSlider = $('#fltMinAge', sheet);
+  const maxSlider = $('#fltMaxAge', sheet);
+  const updateAge = () => {
+    let min = Number(minSlider.value);
+    let max = Number(maxSlider.value);
+    if (min > max) { [min, max] = [max, min]; }
+    f.minAge = min; f.maxAge = max;
+    $('#fltAgeLabel', sheet).textContent = `${min} – ${max} лет`;
+  };
+  minSlider.addEventListener('input', updateAge);
+  maxSlider.addEventListener('input', updateAge);
+
+  $('#fltApply', sheet).addEventListener('click', () => {
+    setFilters(f);
+    sound.pop();
+    toast('Фильтры применены', '🎛️');
+    sheet.remove();
+    if (onApply) onApply();
+  });
+
+  $('#fltReset', sheet).addEventListener('click', () => {
+    const def = { gender: 'all', city: 'all', minAge: 18, maxAge: 35 };
+    setFilters(def);
+    sound.pop();
+    toast('Фильтры сброшены', '🔄');
+    sheet.remove();
+    if (onApply) onApply();
+  });
+}
+
+function openGoodNightModal() {
+  unlock('night_owl');
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet-layer top';
+  sheet.innerHTML = `
+    <div class="overlay"></div>
+    <div class="sheet" style="text-align:center; padding: 24px 20px;">
+      <div class="sheet-handle"></div>
+      <div style="font-size: 44px; margin-bottom: 10px;">🌙✨</div>
+      <h2 style="font-family: var(--disp); font-size: 18px; font-weight: 800; margin-bottom: 8px;">Доброй ночи в Reply</h2>
+      <p style="font-size: 14px; color: var(--txt); line-height: 1.5; margin-bottom: 16px;">
+        Город засыпает, и ночные разговоры становятся самыми искренними. Пусть завтрашний день принесёт новые тёплые встречи!
+      </p>
+      <div style="padding: 8px 14px; border-radius: 999px; background: rgba(139,92,246,0.18); border: 1px solid rgba(139,92,246,0.3); font-size: 12px; font-weight: 700; color: #c4b5fd; display: inline-block; margin-bottom: 16px;">
+        🏆 Достижение: Полуночник 🌙
+      </div>
+      <button class="btn btn-primary" id="gnClose">Сладких снов 💫</button>
+    </div>`;
+  app.appendChild(sheet);
+  $('.overlay', sheet).addEventListener('click', () => sheet.remove());
+  $('#gnClose', sheet).addEventListener('click', () => sheet.remove());
+  sound.pop();
+}
+
 function renderSplash() {
   app.innerHTML = `
     <div class="screen splash">
@@ -205,6 +378,7 @@ function renderSplash() {
       <p class="splash-tag">Не чат.<br>Настоящее первое свидание.</p>
       <button class="btn btn-primary btn-lg splash-cta">Начать</button>
       <p class="splash-sub">Место, где переписка становится воспоминанием</p>
+      <a href="/api/download" class="splash-zip-link" download="reply-project.zip">💾 Скачать проект (ZIP)</a>
     </div>`;
   const btn = $('.splash-cta');
   setTimeout(() => btn.classList.add('ready'), 300);
@@ -221,7 +395,22 @@ function renderSplash() {
 function renderOnboarding() {
   const steps = 4;
   let step = 0;
-  const draft = { name: '', age: '', city: '', avatarEmoji: '😊', avatarLabel: 'Тёплый', avatarImg: 'assets/avatars/user-1.png', avatarHue: 0, about: '', interests: [], goals: '' };
+  
+  // загрузка черновика из localStorage
+  let draft = {
+    name: '', gender: 'male', targetGender: 'all', birthday: '2000-05-15', age: 24, city: 'Москва',
+    avatarEmoji: '😊', avatarLabel: 'Тёплый', avatarImg: 'assets/avatars/user-1.png', avatarHue: 0,
+    mbti: 'ENFP', values: ['Честность', 'Свобода'], habits: ['Кофе по утрам'],
+    about: '', interests: ['Кофе', 'Музыка'], goals: 'Серьёзные отношения',
+  };
+  try {
+    const raw = localStorage.getItem('reply_onboarding_draft');
+    if (raw) Object.assign(draft, JSON.parse(raw));
+  } catch (e) { /* ignore */ }
+
+  const saveDraft = () => {
+    try { localStorage.setItem('reply_onboarding_draft', JSON.stringify(draft)); } catch (e) { /* ignore */ }
+  };
 
   app.innerHTML = `
     <div class="screen onboarding">
@@ -238,6 +427,12 @@ function renderOnboarding() {
   const backBtn = $('.ob-back');
   const nextBtn = $('.ob-next');
 
+  const calcAge = (bdate) => {
+    if (!bdate) return 24;
+    const diff = Date.now() - new Date(bdate).getTime();
+    return Math.max(18, Math.floor(diff / (365.25 * 24 * 3600 * 1000)));
+  };
+
   const stepsFn = [
     // 1 — знакомство
     () => {
@@ -246,20 +441,83 @@ function renderOnboarding() {
           <div class="ob-emoji big">👋</div>
           <h2>Давайте знакомиться</h2>
           <p class="ob-sub">Как вас зовут и откуда вы?</p>
-          <div class="field"><input id="ob-name" placeholder="Имя" maxlength="20"></div>
-          <div class="field-row">
-            <div class="field"><input id="ob-age" placeholder="Возраст" type="number" min="18" max="99"></div>
-            <div class="field"><input id="ob-city" placeholder="Город" maxlength="20"></div>
+          
+          <div class="field"><input id="ob-name" placeholder="Ваше имя" maxlength="20" value="${esc(draft.name)}"></div>
+          
+          <p class="ob-label">Ваш пол</p>
+          <div class="gender-selector" id="ob-gender">
+            <button class="gender-btn ${draft.gender === 'male' ? 'sel' : ''}" data-v="male">👨 Парень</button>
+            <button class="gender-btn ${draft.gender === 'female' ? 'sel' : ''}" data-v="female">👩 Девушка</button>
+            <button class="gender-btn ${draft.gender === 'other' ? 'sel' : ''}" data-v="other">✨ Другое</button>
           </div>
+
+          <p class="ob-label" style="margin-top:12px;">Кого вы ищете</p>
+          <div class="gender-selector" id="ob-target-gender">
+            <button class="gender-btn ${draft.targetGender === 'female' ? 'sel' : ''}" data-v="female">👩 Девушек</button>
+            <button class="gender-btn ${draft.targetGender === 'male' ? 'sel' : ''}" data-v="male">👨 Парней</button>
+            <button class="gender-btn ${draft.targetGender === 'all' ? 'sel' : ''}" data-v="all">💫 Всех</button>
+          </div>
+
+          <div class="field-row" style="margin-top:12px;">
+            <div class="field">
+              <label class="ob-label">Дата рождения</label>
+              <input id="ob-bday" type="date" value="${esc(draft.birthday || '2000-05-15')}">
+            </div>
+            <div class="field">
+              <label class="ob-label">Город</label>
+              <input id="ob-city" placeholder="Город" maxlength="20" value="${esc(draft.city)}">
+            </div>
+          </div>
+
+          <div class="chips-wrap" id="ob-city-chips" style="margin-top:4px;">
+            ${CITIES.map((c) => `<button class="chip ${draft.city === c ? 'on' : ''}">${c}</button>`).join('')}
+          </div>
+          <div id="ob-age-badge" style="font-size:12px; color:#ff8e53; font-weight:700; margin-top:8px;"></div>
         </div>`;
+
       const check = () => {
         draft.name = $('#ob-name')?.value.trim();
-        draft.age = $('#ob-age')?.value.trim();
+        draft.birthday = $('#ob-bday')?.value;
+        draft.age = calcAge(draft.birthday);
         draft.city = $('#ob-city')?.value.trim();
+        $('#ob-age-badge').textContent = draft.age ? `Возраст: ${draft.age} лет` : '';
+        saveDraft();
         nextBtn.disabled = !(draft.name && draft.age >= 18 && draft.city);
       };
+
+      $$('#ob-gender button').forEach((b) => {
+        b.addEventListener('click', () => {
+          $$('#ob-gender button').forEach((x) => x.classList.remove('sel'));
+          b.classList.add('sel');
+          draft.gender = b.dataset.v;
+          saveDraft();
+          sound.pop();
+        });
+      });
+
+      $$('#ob-target-gender button').forEach((b) => {
+        b.addEventListener('click', () => {
+          $$('#ob-target-gender button').forEach((x) => x.classList.remove('sel'));
+          b.classList.add('sel');
+          draft.targetGender = b.dataset.v;
+          saveDraft();
+          sound.pop();
+        });
+      });
+
+      $$('#ob-city-chips button').forEach((b) => {
+        b.addEventListener('click', () => {
+          $('#ob-city').value = b.textContent;
+          draft.city = b.textContent;
+          $$('#ob-city-chips button').forEach((x) => x.classList.remove('on'));
+          b.classList.add('on');
+          check();
+          sound.pop();
+        });
+      });
+
       $('#ob-name').addEventListener('input', check);
-      $('#ob-age').addEventListener('input', check);
+      $('#ob-bday').addEventListener('input', check);
       $('#ob-city').addEventListener('input', check);
       check();
     },
@@ -275,7 +533,7 @@ function renderOnboarding() {
       const grid = $('.avatar-grid');
       AVATARS.forEach((a) => {
         const b = document.createElement('button');
-        b.className = 'avatar-opt';
+        b.className = 'avatar-opt' + (a.img === draft.avatarImg && (a.hue || 0) === (draft.avatarHue || 0) ? ' sel' : '');
         b.innerHTML = `<img class="ao-img" src="${a.img}" alt="" style="${a.hue ? `filter:hue-rotate(${a.hue}deg)` : ''}"><span class="ao-label">${a.label}</span>`;
         b.addEventListener('click', () => {
           $$('.avatar-opt', grid).forEach((x) => x.classList.remove('sel'));
@@ -284,60 +542,144 @@ function renderOnboarding() {
           draft.avatarLabel = a.label;
           draft.avatarImg = a.img;
           draft.avatarHue = a.hue || 0;
+          saveDraft();
           nextBtn.disabled = false;
           sound.pop();
         });
         grid.appendChild(b);
       });
-      nextBtn.disabled = true;
+      nextBtn.disabled = !draft.avatarImg;
     },
-    // 3 — о себе и интересы
+    // 3 — MBTI, ценности, о себе
     () => {
       body.innerHTML = `
         <div class="ob-step">
-          <div class="ob-emoji big">💌</div>
-          <h2>Расскажите о себе</h2>
-          <p class="ob-sub">Пара слов, чтобы было о чём говорить</p>
-          <div class="field"><textarea id="ob-about" rows="3" maxlength="140" placeholder="Например: обожаю кофе, закаты и долгие прогулки…"></textarea></div>
-          <p class="ob-label">Ваши интересы (до 6)</p>
+          <div class="ob-emoji big">🧬</div>
+          <h2>Личность и ценности</h2>
+          <p class="ob-sub">Выберите свой тип MBTI и расскажите о себе</p>
+          
+          <p class="ob-label">Ваш тип личности MBTI</p>
+          <div class="mbti-grid" id="ob-mbti"></div>
+          <div id="ob-mbti-desc" style="font-size:12px; color:#c4b5fd; font-weight:600; padding:8px 10px; background:rgba(139,92,246,0.12); border-radius:10px; margin-top:8px;"></div>
+
+          <p class="ob-label" style="margin-top:14px;">Ценности (до 3)</p>
+          <div class="chips-wrap" id="ob-values"></div>
+
+          <p class="ob-label" style="margin-top:14px;">Привычки (до 2)</p>
+          <div class="chips-wrap" id="ob-habits"></div>
+
+          <p class="ob-label" style="margin-top:14px;">Интересы (до 6)</p>
           <div class="chips-wrap" id="ob-interests"></div>
-          <p class="ob-label">Цель знакомства</p>
+
+          <p class="ob-label" style="margin-top:14px;">Цель знакомства</p>
           <div class="chips-wrap" id="ob-goals"></div>
+
+          <p class="ob-label" style="margin-top:14px;">О себе</p>
+          <div class="field"><textarea id="ob-about" rows="3" maxlength="140" placeholder="Пара слов о себе…">${esc(draft.about)}</textarea></div>
         </div>`;
+
+      const mg = $('#ob-mbti');
+      const md = $('#ob-mbti-desc');
+      MBTI_TYPES.forEach((t) => {
+        const inf = MBTI_INFO[t] || { name: t, tag: '' };
+        const b = document.createElement('div');
+        b.className = 'mbti-card' + (draft.mbti === t ? ' sel' : '');
+        b.innerHTML = `<span class="mbti-code">${t}</span><span class="mbti-role">${inf.name}</span>`;
+        b.addEventListener('click', () => {
+          $$('.mbti-card', mg).forEach((x) => x.classList.remove('sel'));
+          b.classList.add('sel');
+          draft.mbti = t;
+          md.textContent = `✨ ${t} (${inf.name}): ${inf.tag}. Совместимость: ${inf.match}`;
+          saveDraft();
+          sound.pop();
+        });
+        mg.appendChild(b);
+      });
+      const curInf = MBTI_INFO[draft.mbti || 'ENFP'];
+      md.textContent = `✨ ${draft.mbti || 'ENFP'} (${curInf?.name}): ${curInf?.tag}. Совместимость: ${curInf?.match}`;
+
+      // ценности
+      const vw = $('#ob-values');
+      VALUES_LIST.forEach((v) => {
+        const c = document.createElement('button');
+        c.className = 'chip' + ((draft.values || []).includes(v) ? ' on' : '');
+        c.textContent = v;
+        c.addEventListener('click', () => {
+          const arr = draft.values || [];
+          const idx = arr.indexOf(v);
+          if (idx >= 0) arr.splice(idx, 1);
+          else if (arr.length < 3) arr.push(v);
+          else { toast('Максимум 3 ценности', '💎'); return; }
+          draft.values = arr;
+          c.classList.toggle('on', arr.includes(v));
+          saveDraft();
+          sound.pop();
+        });
+        vw.appendChild(c);
+      });
+
+      // привычки
+      const hw = $('#ob-habits');
+      HABITS_LIST.forEach((h) => {
+        const c = document.createElement('button');
+        c.className = 'chip' + ((draft.habits || []).includes(h) ? ' on' : '');
+        c.textContent = h;
+        c.addEventListener('click', () => {
+          const arr = draft.habits || [];
+          const idx = arr.indexOf(h);
+          if (idx >= 0) arr.splice(idx, 1);
+          else if (arr.length < 2) arr.push(h);
+          else { toast('Максимум 2 привычки', '🌿'); return; }
+          draft.habits = arr;
+          c.classList.toggle('on', arr.includes(h));
+          saveDraft();
+          sound.pop();
+        });
+        hw.appendChild(c);
+      });
+
+      // интересы
       const iw = $('#ob-interests');
       INTERESTS.forEach((it) => {
         const c = document.createElement('button');
-        c.className = 'chip';
+        c.className = 'chip' + ((draft.interests || []).includes(it) ? ' on' : '');
         c.textContent = it;
         c.addEventListener('click', () => {
-          c.classList.toggle('on');
+          const arr = draft.interests || [];
+          const idx = arr.indexOf(it);
+          if (idx >= 0) arr.splice(idx, 1);
+          else if (arr.length < 6) arr.push(it);
+          else { toast('Максимум 6 интересов', '🙈'); return; }
+          draft.interests = arr;
+          c.classList.toggle('on', arr.includes(it));
+          saveDraft();
           sound.pop();
-          const sel = $$('.chip.on', iw).map((x) => x.textContent);
-          draft.interests = sel.slice(0, 6);
-          if (sel.length > 6) c.classList.remove('on');
-          nextBtn.disabled = !(draft.about?.trim() && draft.interests.length && draft.goals);
         });
         iw.appendChild(c);
       });
+
+      // цель
       const gw = $('#ob-goals');
       GOALS.forEach((g) => {
         const c = document.createElement('button');
-        c.className = 'chip';
+        c.className = 'chip' + (draft.goals === g ? ' on' : '');
         c.textContent = g;
         c.addEventListener('click', () => {
-          $$('.chip.on', gw).forEach((x) => x.classList.remove('on'));
+          $$('.chip', gw).forEach((x) => x.classList.remove('on'));
           c.classList.add('on');
           draft.goals = g;
+          saveDraft();
           sound.pop();
-          nextBtn.disabled = !(draft.about?.trim() && draft.interests.length && draft.goals);
         });
         gw.appendChild(c);
       });
+
       $('#ob-about').addEventListener('input', (e) => {
         draft.about = e.target.value.trim();
-        nextBtn.disabled = !(draft.about && draft.interests.length && draft.goals);
+        saveDraft();
       });
-      nextBtn.disabled = true;
+
+      nextBtn.disabled = false;
     },
     // 4 — финал
     () => {
@@ -345,11 +687,12 @@ function renderOnboarding() {
         <div class="ob-step">
           <div class="ob-avatar-final"><img src="${draft.avatarImg}" alt="" style="${draft.avatarHue ? `filter:hue-rotate(${draft.avatarHue}deg)` : ''}"></div>
           <h2>Добро пожаловать, ${esc(draft.name)}!</h2>
-          <p class="ob-sub">Сегодня мы подобрали для вас 5 человек.<br>Совпадения — только самые тёплые.</p>
+          <p class="ob-sub">Ваш профиль готов. Пора открывать тёплые встречи в Reply!</p>
           <div class="ob-summary">
-            <div><span>📍</span>${esc(draft.city)}</div>
-            <div><img class="ob-mini" src="${draft.avatarImg}" alt="" style="${draft.avatarHue ? `filter:hue-rotate(${draft.avatarHue}deg)` : ''}"><span>${esc(draft.avatarLabel)}</span></div>
+            <div><span>📍</span>${esc(draft.city)} · ${draft.age} лет</div>
+            <div><span>🧬</span>MBTI: <b>${esc(draft.mbti)}</b> (${MBTI_INFO[draft.mbti]?.name || ''})</div>
             <div><span>🎯</span>${esc(draft.goals)}</div>
+            <div><span>💎</span>Ценности: ${(draft.values || []).join(', ') || 'Честность'}</div>
           </div>
         </div>`;
       nextBtn.textContent = 'Войти в Reply ❤️';
@@ -375,12 +718,15 @@ function renderOnboarding() {
     if (step < steps - 1) { step++; sound.pop(); render(); }
     else {
       setUser({
-        name: draft.name, age: draft.age, city: draft.city,
+        name: draft.name, gender: draft.gender, targetGender: draft.targetGender,
+        birthday: draft.birthday, age: draft.age, city: draft.city,
         avatarEmoji: draft.avatarEmoji, avatarLabel: draft.avatarLabel, avatarImg: draft.avatarImg, avatarHue: draft.avatarHue || 0,
+        mbti: draft.mbti, values: draft.values, habits: draft.habits,
         about: draft.about, interests: draft.interests, goals: draft.goals,
       });
       const st = getState();
       st.onboarded = true;
+      try { localStorage.removeItem('reply_onboarding_draft'); } catch (e) { /* ignore */ }
       save();
       sound.tada();
       toast('Профиль создан. Добро пожаловать!', '🎉');
@@ -389,8 +735,6 @@ function renderOnboarding() {
   });
   render();
 }
-
-// ─── ГЛАВНЫЙ ЭКРАН (табы) ───────────────────────────────────────────────────
 
 function shell(contentHtml) {
   return `
@@ -428,19 +772,25 @@ function renderMain(opts = {}) {
 
 function tabDiscover(tc) {
   const st = getState();
-  let deckOrder = 0;
+  const daily = getDailySurprise();
+  const f = getFilters();
+  const hasFilter = f.gender !== 'all' || f.city !== 'all' || f.minAge > 18 || f.maxAge < 35;
+
   tc.innerHTML = `
     <header class="topbar">
       <div class="tb-logo">Reply<span class="tb-dot"></span></div>
       <div class="tb-right">
         <span class="streak" title="Серия свиданий">🔥 ${st.streak}</span>
-        <button class="tb-icon" data-act="settings">⚙️</button>
+        <button class="tb-icon tb-surprise ${daily.claimed ? '' : 'pulse'}" id="btnSurprise" title="Сюрприз дня">🎁</button>
+        <button class="tb-icon" id="btnNight" title="Ночной режим">🌙</button>
+        <button class="tb-icon tb-filter ${hasFilter ? 'has-filter' : ''}" id="btnFilter" title="Фильтры">🎛️</button>
+        <button class="tb-icon" data-act="settings" title="Настройки">⚙️</button>
       </div>
     </header>
     <div class="discover-wrap">
       <div class="deck-info">
-        <p class="deck-count">Сегодня <b>${remainingToday()}</b> из ${getDeck().length} новых людей</p>
-        <div class="deck-dots">${'<i></i>'.repeat(getDeck().length)}</div>
+        <p class="deck-count">Сегодня <b>${remainingToday()}</b> из ${getFilteredDeck().length} людей по фильтрам</p>
+        <div class="deck-dots">${'<i></i>'.repeat(Math.min(10, getFilteredDeck().length))}</div>
       </div>
       <div class="deck" id="deck"></div>
       <div class="deck-actions">
@@ -451,6 +801,10 @@ function tabDiscover(tc) {
     </div>`;
 
   $('[data-act="settings"]').addEventListener('click', openSettings);
+  $('#btnSurprise').addEventListener('click', () => openDailySurprise(() => tabDiscover(tc)));
+  $('#btnNight').addEventListener('click', openGoodNightModal);
+  $('#btnFilter').addEventListener('click', () => openFiltersSheet(() => tabDiscover(tc)));
+
   $('.da-pass').addEventListener('click', () => actOn('pass'));
   $('.da-like').addEventListener('click', () => actOn('like'));
   $('.da-star').addEventListener('click', () => { sound.like(); actOn('like', true); });
@@ -460,24 +814,30 @@ function tabDiscover(tc) {
 
   const drawDots = () => {
     const n = remainingToday();
+    const total = Math.min(10, getFilteredDeck().length);
     $$('.deck-dots i').forEach((d, i) => d.classList.toggle('on', i < n));
-    $('.deck-count').innerHTML = `Сегодня <b>${n}</b> из ${getDeck().length} новых людей`;
+    $('.deck-count').innerHTML = `Сегодня <b>${n}</b> из ${getFilteredDeck().length} людей по фильтрам`;
   };
 
   const cardHtml = (ch, i) => {
     const scale = 1 - i * 0.055;
     const ty = i * 14;
+    const mbtiInf = MBTI_INFO[ch.mbti] || { name: ch.mbti };
     return `
       <div class="swipe-card" data-id="${ch.id}" style="z-index:${10 - i}; transform:translateY(${ty}px) scale(${scale})">
         <div class="sc-photo">
           <img src="${ch.photo}" alt="${esc(ch.name)}">
           <div class="sc-status">Сейчас: ${ch.status.icon} ${esc(ch.status.text)}</div>
+          ${ch.voice ? `<button class="sc-voice-btn" data-voice="${ch.voice}" title="Послушать голос">🎙️ Голос</button>` : ''}
         </div>
         <div class="sc-body">
           <div class="sc-name">${esc(ch.name)}, ${ch.age} <span class="sc-badge">${ch.badge}</span></div>
-          <div class="sc-city">📍 ${esc(ch.city)} · ${ch.mbti}</div>
+          <div class="sc-city">📍 ${esc(ch.city)} · <button class="sc-mbti-btn" data-mbti="${ch.mbti}">🧬 ${ch.mbti} · ${esc(mbtiInf.name)} ℹ️</button></div>
           <p class="sc-bio">${esc(ch.bio)}</p>
-          <div class="sc-chips">${ch.interests.slice(0, 3).map((x) => `<span class="mini-chip">${esc(x)}</span>`).join('')}</div>
+          <div class="sc-chips">
+            ${ch.interests.slice(0, 3).map((x) => `<span class="mini-chip">${esc(x)}</span>`).join('')}
+            ${(ch.values || []).slice(0, 2).map((v) => `<span class="mini-chip" style="border-color:rgba(251,191,36,0.35); color:#fde68a;">💎 ${esc(v)}</span>`).join('')}
+          </div>
           <div class="sc-match"><span class="sc-heart">❤️</span> Совместимость ${ch.compatibility}% · «${esc(ch.matchLine)}»</div>
         </div>
         <div class="stamp stamp-like">♥</div>
@@ -487,18 +847,24 @@ function tabDiscover(tc) {
 
   const renderDeck = () => {
     deck.innerHTML = '';
-    const ids = getDeck();
+    const ids = getFilteredDeck();
     const cards = ids.filter((id) => !st.swiped[id]);
     if (!cards.length) {
       deck.innerHTML = `
         <div class="deck-empty">
           <div class="de-emoji">🌙</div>
           <h3>На сегодня всё</h3>
-          <p>Мы показали всех, кого подобрали. Хотите посмотреть ещё?</p>
+          <p>Мы показали всех, кого подобрали по фильтрам. Хотите посмотреть ещё?</p>
           <button class="btn btn-primary" data-go="refresh">Показать ещё людей 🔄</button>
+          ${hasFilter ? `<button class="btn btn-ghost-sm" data-go="reset-filter">Сбросить фильтры 🎛️</button>` : ''}
           <button class="btn btn-ghost-sm" data-go="memories">Посмотреть воспоминания</button>
         </div>`;
       $('[data-go="refresh"]').addEventListener('click', () => { refreshDeck(); sound.pop(); renderDeck(); });
+      $('[data-go="reset-filter"]')?.addEventListener('click', () => {
+        setFilters({ gender: 'all', city: 'all', minAge: 18, maxAge: 35 });
+        sound.pop();
+        tabDiscover(tc);
+      });
       $('[data-go="memories"]').addEventListener('click', () => { currentTab = 'memories'; renderMain({ tab: 'memories' }); });
       $('.deck-actions').style.display = 'none';
       drawDots();
@@ -510,6 +876,23 @@ function tabDiscover(tc) {
       const wrap = document.createElement('div');
       wrap.innerHTML = cardHtml(ch, i);
       const el = wrap.firstElementChild;
+      
+      // MBTI кнопка
+      $('.sc-mbti-btn', el)?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openMbtiModal(ch.mbti);
+      });
+
+      // Голосовая кнопка
+      $('.sc-voice-btn', el)?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (ch.voice) {
+          const a = new Audio(ch.voice);
+          a.play().catch(() => {});
+          toast(`Голос: ${ch.name}`, '🎙️');
+        }
+      });
+
       deck.appendChild(el);
     });
     attachSwipe(deck.querySelector('.swipe-card'), (dir) => actOn(dir));
@@ -558,13 +941,7 @@ function tabDiscover(tc) {
       active = false;
       if (dx > 90) { el.style.transition = 'transform .4s'; el.style.transform = 'translate(120%, -40px) rotate(22deg)'; setTimeout(() => cb('like'), 260); }
       else if (dx < -90) { el.style.transition = 'transform .4s'; el.style.transform = 'translate(-120%, -40px) rotate(-22deg)'; setTimeout(() => cb('pass'), 260); }
-      else {
-        el.style.transition = 'transform .35s';
-        el.style.transform = '';
-        setTimeout(() => { el.style.transition = ''; }, 380);
-        if (stamps.like) stamps.like.style.opacity = 0;
-        if (stamps.pass) stamps.pass.style.opacity = 0;
-      }
+      else { el.style.transition = 'transform .2s'; el.style.transform = ''; if (stamps.like) stamps.like.style.opacity = 0; if (stamps.pass) stamps.pass.style.opacity = 0; }
     };
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', end);
@@ -1597,6 +1974,7 @@ function tabProfile(tc) {
   const u = st.user;
   const datesCount = st.dates.length;
   const achievements = st.achievements.length;
+  const mbtiInf = MBTI_INFO[u.mbti || 'ENFP'] || { name: u.mbti || 'ENFP' };
 
   let html = `
     <header class="topbar"><div class="tb-logo">Reply<span class="tb-dot"></span></div>
@@ -1608,7 +1986,7 @@ function tabProfile(tc) {
     <div class="profile">
       <div class="prof-cover">
         <div class="pc-gradient"></div>
-        <div class="pc-avatar"><img src="${u.avatarImg || ''}" alt=""></div>
+        <div class="pc-avatar"><img src="${u.avatarImg || ''}" alt="" style="${u.avatarHue ? `filter:hue-rotate(${u.avatarHue}deg)` : ''}"></div>
       </div>
       <div class="prof-body">
         <div class="prof-name-row">
@@ -1624,30 +2002,65 @@ function tabProfile(tc) {
           <div class="ps"><b>${st.streak}</b><span>Серия 🔥</span></div>
         </div>
         <div class="prof-card">
-          <div class="pc-row"><span>🧬</span><div><b>${u.mbti || 'ENFP'}</b><small>Тип личности (MBTI)</small></div></div>
-          <div class="pc-row"><span>🎭</span><div><b>${u.temperament || 'Эксперимент: тёплый собеседник'}</b><small>Темперамент</small></div></div>
-          <div class="pc-row"><span>💘</span><div><b>${u.loveLanguage || 'Слова поддержки'}</b><small>Язык любви</small></div></div>
-          <div class="pc-row"><span>💬</span><div><b>${u.commStyle || 'Тёплый и живой'}</b><small>Стиль общения</small></div></div>
+          <div class="pc-row" id="profMbtiRow" style="cursor:pointer;">
+            <span>🧬</span>
+            <div><b>${u.mbti || 'ENFP'} · ${esc(mbtiInf.name)}</b><small>Тип личности (MBTI) — нажми для деталей</small></div>
+          </div>
+          <div class="pc-row"><span>🎯</span><div><b>${esc(u.goals || 'Серьёзные отношения')}</b><small>Цель знакомства</small></div></div>
+          <div class="pc-row"><span>💎</span><div><b>${(u.values || []).join(', ') || 'Честность, Свобода'}</b><small>Ценности</small></div></div>
+          <div class="pc-row"><span>🌿</span><div><b>${(u.habits || []).join(', ') || 'Кофе по утрам'}</b><small>Привычки</small></div></div>
         </div>
+
         <h3 class="sec-title">Интересы</h3>
-        <div class="chips-wrap static">${u.interests.map((x) => `<span class="chip on">${esc(x)}</span>`).join('')}</div>
+        <div class="chips-wrap static">${(u.interests || []).map((x) => `<span class="chip on">${esc(x)}</span>`).join('')}</div>
+
         <h3 class="sec-title">Галерея</h3>
         <div class="gallery-grid">${st.gallery.length ? st.gallery.map((g) => `<img src="${g.dataUrl}" alt="">`).join('') : '<div class="empty-note">Совместные фото появятся здесь после свиданий 📸</div>'}</div>
-        <h3 class="sec-title">Цель знакомства</h3>
-        <p class="prof-goal">🎯 ${esc(u.goals || 'Живое общение')}</p>
-        ${st.premium ? `<div class="premium-badge-row"><div class="premium-badge">👑 Reply Premium активна</div></div>` : `
-        <div class="prem-card">
-          <div class="prem-emoji">👑</div>
-          <b>Reply Premium</b>
-          <p>Безлимитные свидания, эксклюзивные локации, совместный просмотр фильмов и многое другое.</p>
-          <button class="btn btn-gold" data-prem="1">Открыть Premium</button>
-        </div>`}
-        <h3 class="sec-title">Ценности и привычки</h3>
-        <div class="chips-wrap static">${(u.values || []).map((x) => `<span class="chip on">${esc(x)}</span>`).join('')}</div>
+
+        ${st.premium ? `
+          <div class="premium-badge-row" style="margin-top:14px;">
+            <div class="premium-badge">👑 Reply Premium активна</div>
+            <button class="btn btn-ghost-sm" id="profCancelPrem" style="margin-top:8px;">Отменить Premium</button>
+          </div>
+        ` : `
+          <div class="prem-card">
+            <div class="prem-emoji">👑</div>
+            <b>Reply Premium</b>
+            <p>Безлимитные свидания, эксклюзивные локации, совместный просмотр фильмов и многое другое.</p>
+            <button class="btn btn-gold" data-prem="1">Открыть Premium</button>
+          </div>`}
+
+        <h3 class="sec-title" style="margin-top:20px;">🏆 Достижения (${achievements} из ${_ACH.length})</h3>
+        <div class="ach-grid">
+          ${_ACH.map((a) => {
+            const unl = st.achievements.includes(a.id);
+            return `
+              <div class="ach-card ${unl ? 'unlocked' : 'locked'}">
+                <div class="ach-emoji">${a.emoji}</div>
+                <div class="ach-info">
+                  <b>${esc(a.name)}</b>
+                  <small>${esc(a.desc)}</small>
+                </div>
+              </div>`;
+          }).join('')}
+        </div>
+
+        <div style="margin-top:24px; text-align:center;">
+          <a href="/api/download" class="btn btn-outline" download="reply-project.zip" style="display:inline-flex; width:auto; padding:10px 20px;">💾 Скачать проект (ZIP)</a>
+        </div>
       </div>
     </div>`;
 
   tc.innerHTML = html;
+  
+  $('#profMbtiRow', tc)?.addEventListener('click', () => openMbtiModal(u.mbti || 'ENFP'));
+  $('#profCancelPrem', tc)?.addEventListener('click', () => {
+    cancelPremium();
+    sound.pop();
+    toast('Подписка Premium отключена', '👑');
+    tabProfile(tc);
+  });
+
   const premBtn = tc.querySelector('[data-prem="1"]');
   if (premBtn) premBtn.addEventListener('click', openPremium);
   tc.querySelector('[data-act="settings2"]').addEventListener('click', openSettings);
@@ -1655,23 +2068,24 @@ function tabProfile(tc) {
 
   function compatTop() {
     if (!st.matched.length) return '—';
-    return Math.max(...st.matched.map((id) => compatibilityWith(id)));
+    return Math.max(...st.matched.map((id) => compatibilityWith(id))) + '%';
   }
 }
 
 // ─── PREMIUM ────────────────────────────────────────────────────────────────
 
 function renderPremium() {
+  const st = getState();
   const features = [
     ['⏰', 'Свидания без ограничения по времени'],
     ['⏳', 'Продление встречи в один тап'],
     ['🏔', 'Эксклюзивные локации: планетарий, горы, яхта'],
     ['🎬', 'Совместный просмотр фильмов'],
     ['🎲', 'Настольные игры на свиданиях'],
-    ['🎙', 'Голосовые и видеосвидания'],
-    ['🎨', 'Расширенная кастомизация профиля'],
-    ['🌟', 'Персональные сценарии свиданий'],
-    ['🔮', 'Ранний доступ к новым функциям'],
+    ['🎙', 'Голосовые заметки и свидания'],
+    ['🎨', 'Светлая и тёмная темы оформления'],
+    ['🌟', 'Специальные подарки живого мира'],
+    ['🔮', 'Приоритет генерации ответов ИИ'],
   ];
   let yearly = true;
 
@@ -1685,19 +2099,27 @@ function renderPremium() {
           <div class="prem-hero">
             <div class="prem-crown">👑</div>
             <h1>Reply Premium</h1>
-            <p>Больше времени. Больше эмоций. Больше свиданий.</p>
+            <p>${st.premium ? 'Ваша подписка активна и дарит все привилегии!' : 'Больше времени. Больше эмоций. Больше свиданий.'}</p>
           </div>
           <div class="prem-features">${features.map(([e, t]) => `<div class="pf-row"><span>${e}</span>${t}</div>`).join('')}</div>
-          <div class="plan-toggle">
-            <button class="${yearly ? 'on' : ''}" data-y="1">Год <span class="plan-sale">-45%</span></button>
-            <button class="${!yearly ? 'on' : ''}" data-y="0">Месяц</button>
-          </div>
-          <div class="plan-price"><b>${price}</b><span>${per}</span></div>
-          <button class="btn btn-gold btn-lg" id="premBuy">Оформить подписку</button>
-          <button class="btn btn-ghost" id="premBack">Вернуться</button>
+          ${!st.premium ? `
+            <div class="plan-toggle">
+              <button class="${yearly ? 'on' : ''}" data-y="1">Год <span class="plan-sale">-45%</span></button>
+              <button class="${!yearly ? 'on' : ''}" data-y="0">Месяц</button>
+            </div>
+            <div class="plan-price"><b>${price}</b><span>${per}</span></div>
+            <button class="btn btn-gold btn-lg" id="premBuy">Оформить подписку за 0 ₽</button>
+          ` : `
+            <div style="text-align:center; padding:14px; background:rgba(251,191,36,0.15); border-radius:14px; margin-bottom:14px;">
+              <b style="color:#fbbf24;">👑 Статус Premium активен</b>
+            </div>
+            <button class="btn btn-ghost" id="premCancel" style="color:#ff5e7e;">Отменить Premium</button>
+          `}
+          <button class="btn btn-ghost" id="premBack">Вернуться назад</button>
           <p class="prem-fine">Отмена в любой момент. Premium расширяет возможности, но Reply остаётся бесплатным для всех.</p>
         </div>
       </div>`;
+
     $$('.plan-toggle button').forEach((b) => {
       b.addEventListener('click', () => {
         yearly = !!Number(b.dataset.y);
@@ -1705,13 +2127,22 @@ function renderPremium() {
         render();
       });
     });
-    $('#premBuy').addEventListener('click', () => {
-      togglePremium();
+
+    $('#premBuy')?.addEventListener('click', () => {
+      setPremium(true);
       sound.tada();
       confetti(app);
       achPopup(_ACH.find((x) => x.id === 'premium') || { emoji: '👑', name: 'Reply Premium', desc: 'Добро пожаловать в клуб' });
-      setTimeout(() => { toast('Premium активирована!', '👑'); show('main', { tab: 'profile' }); }, 1400);
+      setTimeout(() => { toast('Premium активирована!', '👑'); show('main', { tab: 'profile' }); }, 1200);
     });
+
+    $('#premCancel')?.addEventListener('click', () => {
+      cancelPremium();
+      sound.pop();
+      toast('Подписка отменена', '👑');
+      render();
+    });
+
     $('#premBack').addEventListener('click', () => show('main', { tab: 'profile' }));
   };
   render();
@@ -1725,40 +2156,93 @@ function openPremium(cb) {
 
 function openEditProfile() {
   const u = getState().user;
-  const draft = { ...u, interests: [...(u.interests || [])] };
+  const draft = {
+    ...u,
+    interests: [...(u.interests || [])],
+    values: [...(u.values || [])],
+    habits: [...(u.habits || [])],
+  };
   const sheet = document.createElement('div');
   sheet.className = 'sheet-layer top';
 
   const render = () => {
     sheet.innerHTML = `
       <div class="overlay"></div>
-      <div class="sheet edit-sheet">
+      <div class="sheet edit-sheet" style="padding: 20px 18px 24px; max-height:88vh; overflow-y:auto;">
         <div class="sheet-handle"></div>
         <div class="sheet-title">Редактировать профиль</div>
+        
         <div class="field"><label class="ob-label">Имя</label><input id="ed-name" value="${esc(draft.name)}" maxlength="20"></div>
-        <div class="field-row">
+        
+        <p class="ob-label">Пол</p>
+        <div class="gender-selector" id="ed-gender">
+          <button class="gender-btn ${draft.gender === 'male' ? 'sel' : ''}" data-v="male">👨 Парень</button>
+          <button class="gender-btn ${draft.gender === 'female' ? 'sel' : ''}" data-v="female">👩 Девушка</button>
+          <button class="gender-btn ${draft.gender === 'other' ? 'sel' : ''}" data-v="other">✨ Другое</button>
+        </div>
+
+        <p class="ob-label" style="margin-top:12px;">Кого ищете</p>
+        <div class="gender-selector" id="ed-target-gender">
+          <button class="gender-btn ${draft.targetGender === 'female' ? 'sel' : ''}" data-v="female">👩 Девушек</button>
+          <button class="gender-btn ${draft.targetGender === 'male' ? 'sel' : ''}" data-v="male">👨 Парней</button>
+          <button class="gender-btn ${draft.targetGender === 'all' ? 'sel' : ''}" data-v="all">💫 Всех</button>
+        </div>
+
+        <div class="field-row" style="margin-top:12px;">
           <div class="field"><label class="ob-label">Возраст</label><input id="ed-age" type="number" min="18" max="99" value="${esc(draft.age)}"></div>
           <div class="field"><label class="ob-label">Город</label><input id="ed-city" value="${esc(draft.city)}" maxlength="20"></div>
         </div>
+
         <div class="field"><label class="ob-label">О себе</label><textarea id="ed-about" rows="3" maxlength="140" placeholder="Пара слов о себе">${esc(draft.about || '')}</textarea></div>
+        
         <p class="ob-label">Аватар</p>
         <div class="avatar-grid ed-avatars"></div>
-        <p class="ob-label">Интересы (до 6)</p>
+
+        <p class="ob-label" style="margin-top:12px;">Тип MBTI</p>
+        <div class="mbti-grid ed-mbti"></div>
+
+        <p class="ob-label" style="margin-top:12px;">Ценности (до 3)</p>
+        <div class="chips-wrap ed-values"></div>
+
+        <p class="ob-label" style="margin-top:12px;">Привычки (до 2)</p>
+        <div class="chips-wrap ed-habits"></div>
+
+        <p class="ob-label" style="margin-top:12px;">Интересы (до 6)</p>
         <div class="chips-wrap ed-interests"></div>
-        <p class="ob-label">Цель знакомства</p>
+
+        <p class="ob-label" style="margin-top:12px;">Цель знакомства</p>
         <div class="chips-wrap ed-goals"></div>
-        <div class="edit-actions">
+
+        <div class="edit-actions" style="margin-top:20px;">
           <button class="btn btn-primary" id="edSave">Сохранить</button>
           <button class="btn btn-ghost" id="edCancel">Отмена</button>
         </div>
       </div>`;
     $('.overlay', sheet).addEventListener('click', () => sheet.remove());
 
+    $$('#ed-gender button', sheet).forEach((b) => {
+      b.addEventListener('click', () => {
+        $$('#ed-gender button', sheet).forEach((x) => x.classList.remove('sel'));
+        b.classList.add('sel');
+        draft.gender = b.dataset.v;
+        sound.pop();
+      });
+    });
+
+    $$('#ed-target-gender button', sheet).forEach((b) => {
+      b.addEventListener('click', () => {
+        $$('#ed-target-gender button', sheet).forEach((x) => x.classList.remove('sel'));
+        b.classList.add('sel');
+        draft.targetGender = b.dataset.v;
+        sound.pop();
+      });
+    });
+
     // аватары
     const ag = $('.ed-avatars', sheet);
     AVATARS.forEach((a) => {
       const b = document.createElement('button');
-      b.className = 'avatar-opt' + (a.img === draft.avatarImg ? ' sel' : '');
+      b.className = 'avatar-opt' + (a.img === draft.avatarImg && (a.hue || 0) === (draft.avatarHue || 0) ? ' sel' : '');
       b.innerHTML = `<img class="ao-img" src="${a.img}" alt="" style="${a.hue ? `filter:hue-rotate(${a.hue}deg)` : ''}"><span class="ao-label">${a.label}</span>`;
       b.addEventListener('click', () => {
         $$('.avatar-opt', ag).forEach((x) => x.classList.remove('sel'));
@@ -1772,19 +2256,74 @@ function openEditProfile() {
       ag.appendChild(b);
     });
 
+    // MBTI
+    const mg = $('.ed-mbti', sheet);
+    MBTI_TYPES.forEach((t) => {
+      const inf = MBTI_INFO[t] || { name: t };
+      const b = document.createElement('div');
+      b.className = 'mbti-card' + (draft.mbti === t ? ' sel' : '');
+      b.innerHTML = `<span class="mbti-code">${t}</span><span class="mbti-role">${inf.name}</span>`;
+      b.addEventListener('click', () => {
+        $$('.mbti-card', mg).forEach((x) => x.classList.remove('sel'));
+        b.classList.add('sel');
+        draft.mbti = t;
+        sound.pop();
+      });
+      mg.appendChild(b);
+    });
+
+    // ценности
+    const vw = $('.ed-values', sheet);
+    VALUES_LIST.forEach((v) => {
+      const c = document.createElement('button');
+      c.className = 'chip' + ((draft.values || []).includes(v) ? ' on' : '');
+      c.textContent = v;
+      c.addEventListener('click', () => {
+        const arr = draft.values || [];
+        const idx = arr.indexOf(v);
+        if (idx >= 0) arr.splice(idx, 1);
+        else if (arr.length < 3) arr.push(v);
+        else { toast('Максимум 3 ценности', '💎'); return; }
+        draft.values = arr;
+        c.classList.toggle('on', arr.includes(v));
+        sound.pop();
+      });
+      vw.appendChild(c);
+    });
+
+    // привычки
+    const hw = $('.ed-habits', sheet);
+    HABITS_LIST.forEach((h) => {
+      const c = document.createElement('button');
+      c.className = 'chip' + ((draft.habits || []).includes(h) ? ' on' : '');
+      c.textContent = h;
+      c.addEventListener('click', () => {
+        const arr = draft.habits || [];
+        const idx = arr.indexOf(h);
+        if (idx >= 0) arr.splice(idx, 1);
+        else if (arr.length < 2) arr.push(h);
+        else { toast('Максимум 2 привычки', '🌿'); return; }
+        draft.habits = arr;
+        c.classList.toggle('on', arr.includes(h));
+        sound.pop();
+      });
+      hw.appendChild(c);
+    });
+
     // интересы
     const iw = $('.ed-interests', sheet);
     INTERESTS.forEach((it) => {
       const c = document.createElement('button');
-      c.className = 'chip' + (draft.interests.includes(it) ? ' on' : '');
+      c.className = 'chip' + ((draft.interests || []).includes(it) ? ' on' : '');
       c.textContent = it;
       c.addEventListener('click', () => {
-        const i = draft.interests.indexOf(it);
-        if (i >= 0) { draft.interests.splice(i, 1); c.classList.remove('on'); }
-        else {
-          if (draft.interests.length >= 6) { toast('Максимум 6 интересов', '🙈'); return; }
-          draft.interests.push(it); c.classList.add('on');
-        }
+        const arr = draft.interests || [];
+        const i = arr.indexOf(it);
+        if (i >= 0) arr.splice(i, 1);
+        else if (arr.length < 6) arr.push(it);
+        else { toast('Максимум 6 интересов', '🙈'); return; }
+        draft.interests = arr;
+        c.classList.toggle('on', arr.includes(it));
         sound.pop();
       });
       iw.appendChild(c);
@@ -1829,33 +2368,87 @@ function openEditProfile() {
 
 function openSettings() {
   const st = getState();
+  const curTheme = getTheme();
   const sheet = document.createElement('div');
   sheet.className = 'sheet-layer top';
   sheet.innerHTML = `
     <div class="overlay"></div>
-    <div class="sheet settings-sheet">
+    <div class="sheet settings-sheet" style="padding: 20px 18px 24px;">
       <div class="sheet-handle"></div>
       <div class="sheet-title">Настройки</div>
-      <div class="set-row"><span>🔊 Звуки</span><button class="toggle ${st.sound ? 'on' : ''}" id="setSound"></button></div>
+      
+      <p class="ob-label">Тема оформления</p>
+      <div class="theme-selector" id="setThemeGroup">
+        <button class="theme-btn ${curTheme === 'dark' ? 'sel' : ''}" data-t="dark">🌙 Тёмная</button>
+        <button class="theme-btn ${curTheme === 'light' ? 'sel' : ''}" data-t="light">☀️ Светлая</button>
+        <button class="theme-btn ${curTheme === 'auto' ? 'sel' : ''}" data-t="auto">⚙️ Авто</button>
+      </div>
+
+      <div class="set-row" style="margin-top:14px;"><span>🔊 Звуки интерфейса</span><button class="toggle ${st.sound ? 'on' : ''}" id="setSound"></button></div>
       <div class="set-row"><span>🤖 ИИ-собеседник (Groq)</span><button class="toggle ${getAIMode() !== 'off' ? 'on' : ''}" id="setAI"></button></div>
       <p class="prem-fine">ИИ подключён, если у dev-сервера есть ключ Groq (GROQ_API_KEY или groq_key.txt). Без ключа чат работает на локальном «мозге».</p>
-      <div class="set-row"><span>👑 Premium</span><b style="color:#fbbf24">${st.premium ? 'активна' : 'нет'}</b></div>
-      <button class="btn btn-ghost" id="setReset">Сбросить все данные</button>
-      <p class="prem-fine">Reply v1.0 · интерактивный симулятор первого свидания · живой мир + внешний ИИ</p>
+      
+      <div class="set-row" style="margin-top:10px;">
+        <span>👑 Reply Premium</span>
+        <b style="color:#fbbf24">${st.premium ? 'активна' : 'нет'}</b>
+      </div>
+      ${st.premium ? `
+        <button class="btn btn-ghost" id="setCancelPrem" style="color:#ff5e7e; margin-top:4px;">Отменить подписку Premium</button>
+      ` : `
+        <button class="btn btn-gold" id="setOpenPrem" style="margin-top:6px;">✨ Активировать Premium (0 ₽)</button>
+      `}
+
+      <div style="margin-top:16px; display:flex; flex-direction:column; gap:8px;">
+        <button class="btn btn-ghost" id="setNight">🌙 Пожелать доброй ночи</button>
+        <a href="/api/download" class="btn btn-outline" download="reply-project.zip" style="text-align:center;">💾 Скачать архив проекта (ZIP)</a>
+        <button class="btn btn-ghost" id="setReset" style="color:var(--mut2);">Сбросить все данные</button>
+      </div>
+      <p class="prem-fine" style="text-align:center; margin-top:12px;">Reply v1.2 · полная версия · живой мир + ИИ Groq + сезоны + главы</p>
     </div>`;
   app.appendChild(sheet);
   $('.overlay', sheet).addEventListener('click', () => sheet.remove());
+
+  $$('#setThemeGroup button', sheet).forEach((b) => {
+    b.addEventListener('click', () => {
+      $$('#setThemeGroup button', sheet).forEach((x) => x.classList.remove('sel'));
+      b.classList.add('sel');
+      setTheme(b.dataset.t);
+      sound.pop();
+      toast(`Тема: ${b.textContent}`, '🎨');
+    });
+  });
+
   $('#setSound', sheet).addEventListener('click', () => {
     st.sound = !st.sound;
     save();
     $('#setSound', sheet).classList.toggle('on', st.sound);
     if (st.sound) sound.pop();
   });
+
   $('#setAI', sheet).addEventListener('click', () => {
     setAIMode(getAIMode() !== 'off' ? 'off' : 'groq');
     $('#setAI', sheet).classList.toggle('on', getAIMode() !== 'off');
     toast(getAIMode() !== 'off' ? 'Внешний ИИ включён' : 'Внешний ИИ выключен', '🤖');
   });
+
+  $('#setOpenPrem', sheet)?.addEventListener('click', () => {
+    sheet.remove();
+    openPremium();
+  });
+
+  $('#setCancelPrem', sheet)?.addEventListener('click', () => {
+    cancelPremium();
+    sound.pop();
+    toast('Подписка Premium отменена', '👑');
+    sheet.remove();
+    openSettings();
+  });
+
+  $('#setNight', sheet)?.addEventListener('click', () => {
+    sheet.remove();
+    openGoodNightModal();
+  });
+
   $('#setReset', sheet).addEventListener('click', () => {
     if (confirm('Точно сбросить весь прогресс?')) {
       resetAll();
