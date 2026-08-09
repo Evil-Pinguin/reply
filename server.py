@@ -11,12 +11,14 @@
 """
 import base64
 import http.server
+import io
 import json
 import os
 import socketserver
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PORT = int(os.environ.get('PORT', 8080))
@@ -24,6 +26,25 @@ PORT = int(os.environ.get('PORT', 8080))
 GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 GROQ_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant']
 GROQ_TIMEOUT = 30
+
+
+def create_project_zip():
+    """Создаёт ZIP-архив проекта на лету, исключая секреты и кэши."""
+    buf = io.BytesIO()
+    exclude_dirs = {'.git', '__pycache__', '.idea', '.vscode'}
+    exclude_files = {'groq_key.txt', '.env', 'handoff-secret.txt', 'js/llm-config.js'}
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for root, dirs, files in os.walk(ROOT):
+            dirs[:] = [d for d in dirs if d not in exclude_dirs]
+            for file in files:
+                rel_path = os.path.relpath(os.path.join(root, file), ROOT)
+                if (rel_path in exclude_files or
+                    file.endswith('.key') or file.endswith('.secret') or
+                    file.endswith('.pyc') or (file.endswith('.zip') and file != 'download-reply1.zip')):
+                    continue
+                zf.write(os.path.join(root, file), rel_path)
+    buf.seek(0)
+    return buf.getvalue()
 
 
 def load_api_key():
@@ -192,6 +213,18 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(out)
 
     def do_GET(self):
+        if self._api_path() in ('/api/download', '/download.zip', '/download-reply.zip', '/download-reply1.zip'):
+            data = create_project_zip()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/zip')
+            self.send_header('Content-Disposition', 'attachment; filename="reply-project.zip"')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
         if self._api_path() == '/api/ai':
             payload = {}
             try:

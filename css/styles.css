@@ -1301,3 +1301,294 @@ img { display: block; max-width: 100%; }
 .coll-item .ci-lock { position: absolute; top: 5px; right: 6px; font-size: 9px; opacity: .85; }
 .coll-item.on { border-color: rgba(255, 94, 126, .35); background: linear-gradient(160deg, rgba(255, 94, 126, .16), rgba(139, 92, 246, .14)); box-shadow: 0 4px 14px rgba(255, 94, 126, .12); }
 .sec-hint { font-size: 10.5px; font-weight: 600; color: var(--mut); text-transform: none; letter-spacing: 0; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Светлая тема (Light Theme)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+body.theme-light {
+  --bg: #f4f5f9;
+  --bg2: #ffffff;
+  --card: rgba(0, 0, 0, 0.04);
+  --card2: rgba(0, 0, 0, 0.07);
+  --stroke: rgba(0, 0, 0, 0.1);
+  --stroke2: rgba(0, 0, 0, 0.18);
+  --txt: #151324;
+  --mut: #5f597c;
+  --mut2: #867f9f;
+  --shadow: 0 20px 60px rgba(80, 70, 120, 0.12);
+  --shadow-soft: 0 8px 30px rgba(80, 70, 120, 0.08);
+  background: radial-gradient(1200px 800px at 70% -10%, #eae3f8 0%, #f4f5f9 55%);
+}
+body.theme-light .app-frame {
+  background: var(--bg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08);
+}
+body.theme-light .topbar {
+  background: rgba(255, 255, 255, 0.85);
+  border-bottom: 1px solid var(--stroke);
+}
+body.theme-light .bottom-nav {
+  background: rgba(255, 255, 255, 0.92);
+  border-top: 1px solid var(--stroke);
+}
+body.theme-light .swipe-card {
+  background: #ffffff;
+  color: var(--txt);
+  border: 1px solid var(--stroke);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+}
+body.theme-light .sc-body {
+  background: #ffffff;
+}
+body.theme-light .sheet {
+  background: #ffffff;
+  color: var(--txt);
+}
+body.theme-light .field input,
+body.theme-light .field select,
+body.theme-light .field textarea {
+  background: rgba(0, 0, 0, 0.03);
+  color: var(--txt);
+  border: 1px solid var(--stroke);
+}
+body.theme-light .chip {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: var(--stroke);
+  color: var(--txt);
+}
+body.theme-light .coll-item,
+body.theme-light .chapter-card,
+body.theme-light .ach-card,
+body.theme-light .mbti-card,
+body.theme-light .date-card,
+body.theme-light .mem-card {
+  background: #ffffff;
+  border-color: var(--stroke);
+  color: var(--txt);
+}
+body.theme-light .da-btn {
+  background: #ffffff;
+  color: var(--txt);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+body.theme-light .chat-input-bar {
+  background: rgba(255, 255, 255, 0.92);
+  border-top: 1px solid var(--stroke);
+}
+body.theme-light .chat-input-wrap input {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--txt);
+}
+body.theme-light .msg.partner .msg-bubble {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--txt);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Дополнительные UI-компоненты: MBTI, фильтры, сюрприз, темы
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Кнопки выбора пола */
+.gender-selector {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.gender-btn {
+  flex: 1;
+  padding: 10px 8px;
+  border-radius: var(--r-sm);
+  background: var(--card);
+  border: 1px solid var(--stroke);
+  color: var(--txt);
+  font-size: 13.5px;
+  font-weight: 700;
+  text-align: center;
+  transition: all .2s;
+  cursor: pointer;
+}
+.gender-btn:hover { border-color: var(--stroke2); }
+.gender-btn.sel {
+  background: var(--grad);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(255, 94, 126, 0.35);
+}
+
+/* Выбор тем */
+.theme-selector {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.theme-btn {
+  flex: 1;
+  padding: 10px 8px;
+  border-radius: var(--r-sm);
+  background: var(--card);
+  border: 1px solid var(--stroke);
+  color: var(--txt);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .2s;
+}
+.theme-btn.sel {
+  background: var(--grad);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(255, 94, 126, 0.35);
+}
+
+/* Сетка MBTI */
+.mbti-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+}
+.mbti-card {
+  padding: 8px 4px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--stroke);
+  text-align: center;
+  cursor: pointer;
+  transition: all .2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.mbti-card:hover { border-color: var(--stroke2); transform: translateY(-1px); }
+.mbti-card.sel {
+  background: linear-gradient(145deg, rgba(255, 94, 126, .25), rgba(139, 92, 246, .25));
+  border-color: #ff5e7e;
+  box-shadow: 0 4px 14px rgba(255, 94, 126, .25);
+}
+.mbti-code { font-weight: 800; font-size: 13px; font-family: var(--disp); }
+.mbti-role { font-size: 10px; color: var(--mut); line-height: 1.1; }
+
+.sc-mbti-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.18);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  color: #c4b5fd;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .2s;
+}
+.sc-mbti-btn:hover { background: rgba(139, 92, 246, 0.32); }
+
+/* Бейдж фильтра и сюрприза в шапке */
+.tb-surprise {
+  position: relative;
+}
+.tb-surprise.pulse::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff5e7e;
+  box-shadow: 0 0 8px #ff5e7e;
+  animation: pulse-dot 1.4s infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.6; }
+}
+
+.tb-filter.has-filter {
+  color: #ff5e7e;
+  border-color: rgba(255, 94, 126, 0.4);
+}
+
+/* Карточка сюрприза */
+.surprise-card {
+  padding: 24px 20px;
+  text-align: center;
+  border-radius: var(--r-md);
+  background: linear-gradient(150deg, rgba(255, 94, 126, .18), rgba(139, 92, 246, .18));
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  margin-bottom: 16px;
+}
+.surprise-emoji {
+  font-size: 48px;
+  margin-bottom: 12px;
+  filter: drop-shadow(0 6px 16px rgba(255, 94, 126, 0.4));
+  animation: float-surprise 3s ease-in-out infinite;
+}
+@keyframes float-surprise {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(4deg); }
+}
+.surprise-bonus {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(255, 94, 126, 0.25);
+  border: 1px solid rgba(255, 94, 126, 0.4);
+  font-weight: 800;
+  font-size: 13px;
+  color: #ffa4b6;
+}
+
+/* Достижения (Achievements) */
+.ach-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-top: 8px;
+}
+.ach-card {
+  padding: 12px 10px;
+  border-radius: var(--r-sm);
+  background: var(--card);
+  border: 1px solid var(--stroke);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  transition: all .2s;
+}
+.ach-card.unlocked {
+  background: linear-gradient(145deg, rgba(251, 191, 36, .12), rgba(255, 94, 126, .12));
+  border-color: rgba(251, 191, 36, .35);
+}
+.ach-card.locked {
+  opacity: 0.45;
+  filter: grayscale(0.8);
+}
+.ach-emoji { font-size: 24px; }
+.ach-info b { display: block; font-size: 12.5px; font-weight: 700; }
+.ach-info small { font-size: 10.5px; color: var(--mut); line-height: 1.2; display: block; }
+
+/* Ссылка на скачивание zip в сплэш */
+.splash-zip-link {
+  margin-top: 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--mut);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--stroke);
+  transition: all .2s;
+}
+.splash-zip-link:hover {
+  color: #fff;
+  border-color: var(--stroke2);
+}

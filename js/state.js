@@ -1,6 +1,6 @@
 // ─── Reply · состояние и сохранение ─────────────────────────────────────────
 
-import { CHARACTERS, shuffle } from './data.js';
+import { CHARACTERS, DAILY_SURPRISES, shuffle } from './data.js';
 import { getSeason } from './seasons.js';
 
 const KEY = 'reply_state_v1';
@@ -14,9 +14,20 @@ function defaultState() {
   return {
     onboarded: false,
     user: {
-      name: '', age: '', city: '', avatarEmoji: '😊', avatarLabel: 'Тёплый', avatarImg: 'assets/avatars/user-1.png',
-      about: '', interests: [], goals: [],
+      name: '', gender: 'male', targetGender: 'all', birthday: '', age: 24, city: 'Москва',
+      avatarEmoji: '😊', avatarLabel: 'Тёплый', avatarImg: 'assets/avatars/user-1.png', avatarHue: 0,
+      mbti: 'ENFP', values: ['Честность', 'Свобода', 'Творчество'], habits: ['Кофе по утрам', 'Вечерние прогулки'],
+      about: '', interests: ['Кофе', 'Путешествия', 'Музыка'], goals: 'Серьёзные отношения',
     },
+    theme: 'dark',       // 'dark' | 'light' | 'auto'
+    filters: {           // фильтры в ленте свайпов
+      gender: 'all',     // 'all' | 'female' | 'male'
+      city: 'all',       // 'all' | 'Москва' | 'Санкт-Петербург' | ...
+      minAge: 18,
+      maxAge: 35,
+    },
+    surpriseDay: null,   // дата последнего полученного сюрприза дня
+    surpriseItem: null,  // текущий сюрприз
     premium: false,
     sound: true,
     day: todayStr(),
@@ -61,6 +72,8 @@ function load() {
       parsed.planned = [p];
     }
     if (!parsed.planned) parsed.planned = [];
+    if (!parsed.filters) parsed.filters = def.filters;
+    if (!parsed.theme) parsed.theme = 'dark';
     // свежие карточки на новый день
     if (parsed.day !== def.day) {
       parsed.day = def.day;
@@ -89,23 +102,95 @@ export function setUser(patch) {
   save();
 }
 
+// ─── Темы оформления ────────────────────────────────────────────────────────
+
+export function getTheme() {
+  return state.theme || 'dark';
+}
+
+export function setTheme(theme) {
+  state.theme = theme;
+  applyTheme(theme);
+  save();
+}
+
+export function applyTheme(theme = state.theme) {
+  const isLight = theme === 'light' || (theme === 'auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+  document.body.classList.toggle('theme-light', isLight);
+}
+
+// ─── Фильтры ленты ──────────────────────────────────────────────────────────
+
+export function getFilters() {
+  return state.filters || { gender: 'all', city: 'all', minAge: 18, maxAge: 35 };
+}
+
+export function setFilters(patch) {
+  state.filters = { ...(state.filters || {}), ...patch };
+  save();
+}
+
+// ─── Сюрприз дня ────────────────────────────────────────────────────────────
+
+export function getDailySurprise() {
+  const today = todayStr();
+  const alreadyClaimed = state.surpriseDay === today;
+  if (!state.surpriseItem || state.surpriseDay !== today) {
+    const idx = Math.abs(today.split('-').reduce((acc, n) => acc * 31 + Number(n), 0)) % DAILY_SURPRISES.length;
+    state.surpriseItem = DAILY_SURPRISES[idx];
+  }
+  return { item: state.surpriseItem, claimed: alreadyClaimed };
+}
+
+export function claimDailySurprise() {
+  const today = todayStr();
+  state.surpriseDay = today;
+  unlock('surprise_hunter');
+  save();
+  return getDailySurprise().item;
+}
+
+// ─── Управление Premium ─────────────────────────────────────────────────────
+
 export function isPremium() { return state.premium; }
 
-export function togglePremium() {
-  state.premium = !state.premium;
+export function setPremium(val) {
+  state.premium = !!val;
   if (state.premium) unlock('premium');
   save();
   return state.premium;
 }
 
+export function togglePremium() {
+  return setPremium(!state.premium);
+}
+
+export function cancelPremium() {
+  return setPremium(false);
+}
+
 // ─── Ежедневная колода ──────────────────────────────────────────────────────
 
 export function getDeck() {
-  if (state.deck.length === 0) {
+  if (!state.deck || state.deck.length === 0) {
     state.deck = shuffle(CHARACTERS.map((c) => c.id));
     save();
   }
   return state.deck;
+}
+
+export function getFilteredDeck() {
+  const allIds = getDeck();
+  const f = getFilters();
+  return allIds.filter((id) => {
+    const ch = CHARACTERS.find((c) => c.id === id);
+    if (!ch) return false;
+    if (f.gender && f.gender !== 'all' && ch.gender && ch.gender !== f.gender) return false;
+    if (f.city && f.city !== 'all' && ch.city !== f.city) return false;
+    if (f.minAge && ch.age < f.minAge) return false;
+    if (f.maxAge && ch.age > f.maxAge) return false;
+    return true;
+  });
 }
 
 // показать новую подборку (сброс свайпов, мэтчи сохраняются)
@@ -117,12 +202,12 @@ export function refreshDeck() {
 }
 
 export function remainingToday() {
-  const deck = getDeck();
+  const deck = getFilteredDeck();
   return deck.filter((id) => !state.swiped[id]).length;
 }
 
 export function nextCard() {
-  const deck = getDeck();
+  const deck = getFilteredDeck();
   const next = deck.find((id) => !state.swiped[id]);
   return next ? CHARACTERS.find((c) => c.id === next) : null;
 }

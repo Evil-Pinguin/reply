@@ -5,6 +5,9 @@ groq_key.txt
 .env
 *.key
 *.secret
+js/llm-config.js
+handoff-secret.txt
+*.zip
 
 # ─── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
