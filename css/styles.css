@@ -979,7 +979,7 @@ img { display: block; max-width: 100%; }
 .profile { padding-bottom: 20px; }
 .prof-cover { position: relative; height: 210px; background: linear-gradient(160deg, #8b5cf6, #ec4899 55%, #ff8e53); overflow: hidden; }
 .pc-gradient { position: absolute; inset: 0; background: radial-gradient(400px 200px at 20% 10%, rgba(255, 255, 255, .25), transparent 60%); }
-.pc-avatar { position: absolute; bottom: -34px; left: 50%; transform: translateX(-50%); width: 108px; height: 108px; border-radius: 50%; background: linear-gradient(160deg, #241c40, #171228); border: 4px solid var(--bg); font-size: 52px; display: grid; place-items: center; box-shadow: 0 14px 40px rgba(0, 0, 0, .5); }
+.pc-avatar { position: absolute; bottom: -34px; left: 50%; transform: translateX(-50%); width: 112px; height: 112px; border-radius: 26px; background: linear-gradient(160deg, #241c40, #171228); border: 4px solid var(--bg); font-size: 52px; display: grid; place-items: center; box-shadow: 0 14px 40px rgba(0, 0, 0, .5); overflow: hidden; }
 .prof-body { padding: 48px 22px 20px; display: flex; flex-direction: column; gap: 6px; }
 .prof-name { font-family: var(--disp); font-size: 21px; text-align: center; }
 .prof-verify { color: #38bdf8; font-size: 17px; }
@@ -1143,13 +1143,13 @@ img { display: block; max-width: 100%; }
 .btn { touch-action: manipulation; }
 
 /* ── минималистичные аватары (вместо эмодзи) ──────────────────────────── */
-.avatar-opt .ao-img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,.2); box-shadow: 0 6px 16px rgba(0,0,0,.35); }
+.avatar-opt .ao-img { width: 44px; height: 44px; border-radius: 12px; object-fit: cover; border: 2px solid rgba(255,255,255,.2); box-shadow: 0 6px 16px rgba(0,0,0,.35); }
 .avatar-opt.sel .ao-img { border-color: var(--rose); box-shadow: 0 8px 24px rgba(255,94,126,.4); }
-.ob-avatar-final { width: 108px; height: 108px; border-radius: 50%; overflow: hidden; border: 4px solid rgba(255,255,255,.3); box-shadow: 0 16px 44px rgba(255,94,126,.45); }
+.ob-avatar-final { width: 112px; height: 112px; border-radius: 26px; overflow: hidden; border: 4px solid rgba(255,255,255,.3); box-shadow: 0 16px 44px rgba(255,94,126,.45); }
 .ob-avatar-final img { width: 100%; height: 100%; object-fit: cover; }
 .ob-mini { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; display: inline-block; vertical-align: middle; }
 .char-head img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
-.pc-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.pc-avatar img { width: 100%; height: 100%; border-radius: 26px; object-fit: cover; }
 .mp-user img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
 .ch-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
 
@@ -1592,3 +1592,9 @@ body.theme-light .msg.partner .msg-bubble {
   color: #fff;
   border-color: var(--stroke2);
 }
+
+/* ── v1.2.7: воронка отмены Premium ─────────────────────────────────────── */
+.cf-emoji { font-size: 46px; margin-bottom: 6px; line-height: 1; }
+.cf-reasons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.cf-reasons .chip { padding: 9px 12px; font-size: 12.5px; }
+.cancel-sheet .edit-actions { display: flex; gap: 8px; margin-top: 6px; }

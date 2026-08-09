@@ -893,8 +893,8 @@ export class ChatPanel {
     } else if (opts.kind === 'question') {
       wrap.innerHTML = `<div class="msg-bubble"><div class="q-tag">🃏 Вопрос</div>${text}</div>`;
     } else {
-      wrap.innerHTML = `<div class="msg-bubble">${text.replace(/</g, '&lt;')}${opts.ai ? '<span class="ai-tag" title="Ответ сгенерирован внешним ИИ (Groq)">✦ AI</span>' : ''}</div>`;
-      if (opts.ai) wrap.classList.add('msg-ai');
+      // v1.2.7: без плашек AI — реплики внешней модели неотличимы от живого общения
+      wrap.innerHTML = `<div class="msg-bubble">${text.replace(/</g, '&lt;')}</div>`;
       if (opts.emoji && opts.emoji !== '👋') {
         const e = document.createElement('div');
         e.className = 'msg-reaction';

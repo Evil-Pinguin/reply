@@ -29,6 +29,7 @@ function defaultState() {
     surpriseDay: null,   // дата последнего полученного сюрприза дня
     surpriseItem: null,  // текущий сюрприз
     premium: false,
+    premiumDiscount: false,  // v1.2.7: пользователь забрал скидку 50% в воронке отмены
     sound: true,
     day: todayStr(),
     deck: [],            // id персонажей на сегодня

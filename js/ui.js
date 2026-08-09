@@ -393,7 +393,7 @@ function renderSplash() {
 // ─── ОНБОРДИНГ ──────────────────────────────────────────────────────────────
 
 function renderOnboarding() {
-  const steps = 4;
+  const steps = 5;
   let step = 0;
   
   // загрузка черновика из localStorage
@@ -469,9 +469,6 @@ function renderOnboarding() {
             </div>
           </div>
 
-          <div class="chips-wrap" id="ob-city-chips" style="margin-top:4px;">
-            ${CITIES.map((c) => `<button class="chip ${draft.city === c ? 'on' : ''}">${c}</button>`).join('')}
-          </div>
           <div id="ob-age-badge" style="font-size:12px; color:#ff8e53; font-weight:700; margin-top:8px;"></div>
         </div>`;
 
@@ -501,17 +498,6 @@ function renderOnboarding() {
           b.classList.add('sel');
           draft.targetGender = b.dataset.v;
           saveDraft();
-          sound.pop();
-        });
-      });
-
-      $$('#ob-city-chips button').forEach((b) => {
-        b.addEventListener('click', () => {
-          $('#ob-city').value = b.textContent;
-          draft.city = b.textContent;
-          $$('#ob-city-chips button').forEach((x) => x.classList.remove('on'));
-          b.classList.add('on');
-          check();
           sound.pop();
         });
       });
@@ -550,32 +536,15 @@ function renderOnboarding() {
       });
       nextBtn.disabled = !draft.avatarImg;
     },
-    // 3 — MBTI, ценности, о себе
+    // 3 — MBTI отдельным шагом (v1.2.7)
     () => {
       body.innerHTML = `
         <div class="ob-step">
           <div class="ob-emoji big">🧬</div>
-          <h2>Личность и ценности</h2>
-          <p class="ob-sub">Выберите свой тип MBTI и расскажите о себе</p>
-          
-          <p class="ob-label">Ваш тип личности MBTI</p>
+          <h2>Ваш тип личности MBTI</h2>
+          <p class="ob-sub">16 типов — выберите свой, чтобы найти идеальную совместимость</p>
           <div class="mbti-grid" id="ob-mbti"></div>
           <div id="ob-mbti-desc" style="font-size:12px; color:#c4b5fd; font-weight:600; padding:8px 10px; background:rgba(139,92,246,0.12); border-radius:10px; margin-top:8px;"></div>
-
-          <p class="ob-label" style="margin-top:14px;">Ценности (до 3)</p>
-          <div class="chips-wrap" id="ob-values"></div>
-
-          <p class="ob-label" style="margin-top:14px;">Привычки (до 2)</p>
-          <div class="chips-wrap" id="ob-habits"></div>
-
-          <p class="ob-label" style="margin-top:14px;">Интересы (до 6)</p>
-          <div class="chips-wrap" id="ob-interests"></div>
-
-          <p class="ob-label" style="margin-top:14px;">Цель знакомства</p>
-          <div class="chips-wrap" id="ob-goals"></div>
-
-          <p class="ob-label" style="margin-top:14px;">О себе</p>
-          <div class="field"><textarea id="ob-about" rows="3" maxlength="140" placeholder="Пара слов о себе…">${esc(draft.about)}</textarea></div>
         </div>`;
 
       const mg = $('#ob-mbti');
@@ -592,11 +561,37 @@ function renderOnboarding() {
           md.textContent = `✨ ${t} (${inf.name}): ${inf.tag}. Совместимость: ${inf.match}`;
           saveDraft();
           sound.pop();
+          nextBtn.disabled = false;
         });
         mg.appendChild(b);
       });
       const curInf = MBTI_INFO[draft.mbti || 'ENFP'];
       md.textContent = `✨ ${draft.mbti || 'ENFP'} (${curInf?.name}): ${curInf?.tag}. Совместимость: ${curInf?.match}`;
+      nextBtn.disabled = !draft.mbti;
+    },
+    // 4 — о себе
+    () => {
+      body.innerHTML = `
+        <div class="ob-step">
+          <div class="ob-emoji big">💎</div>
+          <h2>Расскажите о себе</h2>
+          <p class="ob-sub">Ценности, привычки, интересы и цель знакомства</p>
+
+          <p class="ob-label">Ценности (до 3)</p>
+          <div class="chips-wrap" id="ob-values"></div>
+
+          <p class="ob-label" style="margin-top:14px;">Привычки (до 2)</p>
+          <div class="chips-wrap" id="ob-habits"></div>
+
+          <p class="ob-label" style="margin-top:14px;">Интересы (до 6)</p>
+          <div class="chips-wrap" id="ob-interests"></div>
+
+          <p class="ob-label" style="margin-top:14px;">Цель знакомства</p>
+          <div class="chips-wrap" id="ob-goals"></div>
+
+          <p class="ob-label" style="margin-top:14px;">О себе</p>
+          <div class="field"><textarea id="ob-about" rows="3" maxlength="140" placeholder="Пара слов о себе…">${esc(draft.about)}</textarea></div>
+        </div>`;
 
       // ценности
       const vw = $('#ob-values');
@@ -681,7 +676,7 @@ function renderOnboarding() {
 
       nextBtn.disabled = false;
     },
-    // 4 — финал
+    // 5 — финал
     () => {
       body.innerHTML = `
         <div class="ob-step">
@@ -807,7 +802,7 @@ function tabDiscover(tc) {
 
   $('.da-pass').addEventListener('click', () => actOn('pass'));
   $('.da-like').addEventListener('click', () => actOn('like'));
-  $('.da-star').addEventListener('click', () => { sound.like(); actOn('like', true); });
+  $('.da-star').addEventListener('click', () => actOn('like', true));
 
   const deck = $('#deck');
   let busy = false;
@@ -866,7 +861,7 @@ function tabDiscover(tc) {
         tabDiscover(tc);
       });
       $('[data-go="memories"]').addEventListener('click', () => { currentTab = 'memories'; renderMain({ tab: 'memories' }); });
-      $('.deck-actions').style.display = 'none';
+      // v1.2.7: кнопки свайпа больше не исчезают при пустой колоде
       drawDots();
       return;
     }
@@ -902,7 +897,10 @@ function tabDiscover(tc) {
   const actOn = (dir, superLike = false) => {
     if (busy) return;
     const top = deck.querySelector('.swipe-card');
-    if (!top) return;
+    if (!top) {
+      toast('Колода закончилась — нажмите «Показать ещё людей»', '🌙');
+      return;
+    }
     busy = true;
     if (dir === 'like') sound.like(); else sound.nope();
     top.classList.add('fly-' + dir);
@@ -1773,22 +1771,7 @@ function tabDates(tc) {
   }
   html += `</div>`;
 
-  // ── ещё не знакомы: можно сразу познакомиться и позвать на свидание
-  const others = CHARACTERS.filter((c) => !st.matched.includes(c.id));
-  if (others.length) {
-    html += `<h3 class="sec-title">Ещё не знакомы</h3><div class="rel-list">`;
-    others.forEach((ch) => {
-      html += `
-        <div class="rel-item">
-          <img class="ri-photo" src="${ch.photo}">
-          <div class="ri-info"><b>${esc(ch.name)}, ${ch.age}</b><small>❤️ ${ch.compatibility}% · ${esc(ch.city)}</small></div>
-          <button type="button" class="btn btn-small" data-meet="${ch.id}">Познакомиться 💘</button>
-        </div>`;
-    });
-    html += `</div>`;
-  }
-
-  // ── прошлые
+  // ── прошлые (v1.2.7: на вкладке только взаимные пары, планы и прошедшие встречи)
   if (st.dates.length) {
     html += `<h3 class="sec-title">Прошлые свидания</h3><div class="past-list">`;
     st.dates.slice().reverse().forEach((d) => {
@@ -2020,6 +2003,7 @@ function tabProfile(tc) {
         ${st.premium ? `
           <div class="premium-badge-row" style="margin-top:14px;">
             <div class="premium-badge">👑 Reply Premium активна</div>
+            ${st.premiumDiscount ? '<div style="font-size:12px; color:#fde68a; margin-top:4px;">🎁 ваша скидка 50% навсегда применена</div>' : ''}
             <button class="btn btn-ghost-sm" id="profCancelPrem" style="margin-top:8px;">Отменить Premium</button>
           </div>
         ` : `
@@ -2055,10 +2039,7 @@ function tabProfile(tc) {
   
   $('#profMbtiRow', tc)?.addEventListener('click', () => openMbtiModal(u.mbti || 'ENFP'));
   $('#profCancelPrem', tc)?.addEventListener('click', () => {
-    cancelPremium();
-    sound.pop();
-    toast('Подписка Premium отключена', '👑');
-    tabProfile(tc);
+    openCancelFlow(() => tabProfile(tc));
   });
 
   const premBtn = tc.querySelector('[data-prem="1"]');
@@ -2073,6 +2054,110 @@ function tabProfile(tc) {
 }
 
 // ─── PREMIUM ────────────────────────────────────────────────────────────────
+
+// v1.2.7: 3-шаговая воронка отмены Premium:
+//   1. «Вы уверены?» → 2. «Почему?» (+«Далее →») → 3. «Скидка 50% навсегда»
+function openCancelFlow(onDone) {
+  const st = getState();
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet-layer top';
+  let step = 0;
+  let reason = '';
+  const REASONS = [
+    '💸 Слишком дорого',
+    '⏳ Редко пользуюсь',
+    '📱 Нашёл другое приложение',
+    '🔧 Не хватает функций',
+    '💔 Другое',
+  ];
+
+  const render = () => {
+    const body = step === 0 ? `
+      <div class="cf-emoji">😢</div>
+      <h3 style="margin:0 0 6px;">Вы уверены, что хотите отменить Premium?</h3>
+      <p style="color:var(--mut); font-size:13px; line-height:1.5; margin:0 0 16px;">
+        Вы потеряете безлимитные свидания, эксклюзивные локации (планетарий, горы, яхта),
+        совместный просмотр фильмов и другие привилегии 👑
+      </p>
+      <div class="edit-actions" style="flex-direction:column; gap:8px;">
+        <button class="btn btn-gold" id="cfStay" style="width:100%;">Остаться с Premium 👑</button>
+        <button class="btn btn-ghost" id="cfNext" style="width:100%; color:#ff5e7e;">Продолжить отмену →</button>
+      </div>`
+    : step === 1 ? `
+      <div class="cf-emoji">🤔</div>
+      <h3 style="margin:0 0 6px;">Расскажите, почему вы уходите?</h3>
+      <p style="color:var(--mut); font-size:13px; margin:0 0 12px;">Это поможет нам стать лучше</p>
+      <div class="cf-reasons">
+        ${REASONS.map((r) => `<button class="chip ${reason === r ? 'on' : ''}" data-reason="${esc(r)}">${r}</button>`).join('')}
+      </div>
+      <div class="edit-actions" style="margin-top:16px;">
+        <button class="btn btn-primary" id="cfNext2" disabled style="flex:1;">Далее →</button>
+        <button class="btn btn-ghost" id="cfBack" style="flex:0 0 auto;">← Назад</button>
+      </div>`
+    : `
+      <div class="cf-emoji" style="font-size:52px;">🎁</div>
+      <h3 style="margin:0 0 6px;">Не уходите! Скидка 50% навсегда</h3>
+      <p style="color:var(--mut); font-size:13px; line-height:1.5; margin:0 0 14px;">
+        ${reason ? `Спасибо за честность («${esc(reason)}»). ` : ''}Мы услышали вас и дарим
+        <b style="color:#fbbf24;">скидку 50% на Premium навсегда</b> — просто останьтесь с нами 💛
+      </p>
+      <div class="plan-price" style="justify-content:center; margin-bottom:14px;">
+        <b style="color:#fbbf24;">995 ₽/год</b><span style="text-decoration:line-through; opacity:.5;">1 990 ₽/год</span>
+      </div>
+      <div class="edit-actions" style="flex-direction:column; gap:8px;">
+        <button class="btn btn-gold" id="cfTake" style="width:100%;">🎉 Забрать скидку 50%</button>
+        <button class="btn btn-ghost" id="cfCancel" style="width:100%; color:#ff5e7e;">Отменить окончательно</button>
+      </div>`;
+
+    sheet.innerHTML = `
+      <div class="overlay"></div>
+      <div class="sheet cancel-sheet" style="padding: 22px 18px 24px; text-align:center;">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title" style="text-align:center;">${step === 2 ? 'Специальное предложение ✨' : 'Отмена Premium'}</div>
+        ${body}
+      </div>`;
+    app.appendChild(sheet);
+    $('.overlay', sheet).addEventListener('click', () => sheet.remove());
+
+    $('#cfStay', sheet)?.addEventListener('click', () => {
+      sound.pop();
+      toast('Отличный выбор! Premium остаётся с вами', '👑');
+      sheet.remove();
+      if (onDone) onDone();
+    });
+    $('#cfNext', sheet)?.addEventListener('click', () => { step = 1; sound.pop(); render(); });
+    $('#cfBack', sheet)?.addEventListener('click', () => { step = 0; sound.pop(); render(); });
+    $$('.cf-reasons .chip', sheet).forEach((b) => {
+      b.addEventListener('click', () => {
+        $$('.cf-reasons .chip', sheet).forEach((x) => x.classList.remove('on'));
+        b.classList.add('on');
+        reason = b.dataset.reason;
+        $('#cfNext2', sheet).disabled = false;
+        sound.pop();
+      });
+    });
+    $('#cfNext2', sheet)?.addEventListener('click', () => { if (!reason) return; step = 2; sound.pop(); render(); });
+    $('#cfTake', sheet)?.addEventListener('click', () => {
+      sound.tada();
+      st.premium = true;
+      st.premiumDiscount = true;
+      save();
+      toast('Скидка 50% применена навсегда!', '🎉');
+      sheet.remove();
+      if (onDone) onDone();
+    });
+    $('#cfCancel', sheet)?.addEventListener('click', () => {
+      cancelPremium();
+      st.premiumDiscount = false;
+      save();
+      sound.pop();
+      toast('Подписка Premium отменена', '👑');
+      sheet.remove();
+      if (onDone) onDone();
+    });
+  };
+  render();
+}
 
 function renderPremium() {
   const st = getState();
@@ -2112,6 +2197,7 @@ function renderPremium() {
           ` : `
             <div style="text-align:center; padding:14px; background:rgba(251,191,36,0.15); border-radius:14px; margin-bottom:14px;">
               <b style="color:#fbbf24;">👑 Статус Premium активен</b>
+              ${st.premiumDiscount ? '<div style="font-size:12px; color:#fde68a; margin-top:4px;">🎁 ваша скидка 50% навсегда применена</div>' : ''}
             </div>
             <button class="btn btn-ghost" id="premCancel" style="color:#ff5e7e;">Отменить Premium</button>
           `}
@@ -2137,10 +2223,7 @@ function renderPremium() {
     });
 
     $('#premCancel')?.addEventListener('click', () => {
-      cancelPremium();
-      sound.pop();
-      toast('Подписка отменена', '👑');
-      render();
+      openCancelFlow(() => render());
     });
 
     $('#premBack').addEventListener('click', () => show('main', { tab: 'profile' }));
@@ -2403,7 +2486,7 @@ function openSettings() {
         <a href="/api/download" class="btn btn-outline" download="reply-project.zip" style="text-align:center;">💾 Скачать архив проекта (ZIP)</a>
         <button class="btn btn-ghost" id="setReset" style="color:var(--mut2);">Сбросить все данные</button>
       </div>
-      <p class="prem-fine" style="text-align:center; margin-top:12px;">Reply v1.2 · полная версия · живой мир + ИИ Groq + сезоны + главы</p>
+      <p class="prem-fine" style="text-align:center; margin-top:12px;">Reply v1.2.7 · полная версия · живой мир + ИИ Groq + сезоны + главы</p>
     </div>`;
   app.appendChild(sheet);
   $('.overlay', sheet).addEventListener('click', () => sheet.remove());
@@ -2437,11 +2520,7 @@ function openSettings() {
   });
 
   $('#setCancelPrem', sheet)?.addEventListener('click', () => {
-    cancelPremium();
-    sound.pop();
-    toast('Подписка Premium отменена', '👑');
-    sheet.remove();
-    openSettings();
+    openCancelFlow(() => { sheet.remove(); openSettings(); });
   });
 
   $('#setNight', sheet)?.addEventListener('click', () => {
