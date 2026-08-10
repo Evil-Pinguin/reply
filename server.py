@@ -212,7 +212,23 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(out)
 
+    # ── защита секретов: никогда не отдавать файлы с ключами ───────────────
+    _BLOCKED = ('/groq_key.txt', '/.env', '/handoff-secret.txt', '/js/llm-config.js')
+
+    def _is_blocked(self, path):
+        p = (path or '').lower()
+        return p in self._BLOCKED or p.endswith('.key') or p.endswith('.secret')
+
+    def do_HEAD(self):
+        if self._is_blocked(self._api_path()):
+            self.send_error(404, 'Not Found')
+            return
+        super().do_HEAD()
+
     def do_GET(self):
+        if self._is_blocked(self._api_path()):
+            self.send_error(404, 'Not Found')
+            return
         if self._api_path() in ('/api/download', '/download.zip', '/download-reply.zip', '/download-reply1.zip'):
             data = create_project_zip()
             self.send_response(200)

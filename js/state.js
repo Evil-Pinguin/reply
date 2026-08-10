@@ -46,6 +46,9 @@ function defaultState() {
     achievements: [],
     streak: 0,
     lastDateDay: null,
+    flameOutfit: 'fire', // fire | ice | neon | gold | pink — как в Duolingo/TikTok
+    lastBirthdayShown: null, // YYYY-MM-DD когда показывали поздравление
+    dailyGiftDay: null, // YYYY-MM-DD последнего дневного подарка
     collections: {       // коллекции: собранные предметы живой вселенной
       locations: [],     // id локаций, где были свидания
       dishes: [],        // названия заказанных блюд
@@ -400,4 +403,61 @@ export function compatibilityWith(charId) {
   const dates = state.dates.filter((dd) => dd.charId === charId).length;
   const base = ch ? ch.compatibility : 80;
   return Math.min(99, base + dates * 1 + Math.round((rel.stats.sympathy + rel.stats.trust) / 20));
+}
+
+// ─── Огонёк-стрик (Duolingo/TikTok) ────────────────────────────────────────
+export const FLAME_STYLES = {
+  fire: { emoji: '🔥', name: 'Огонь', color: '#f59e0b' },
+  ice:  { emoji: '🧊', name: 'Лёд', color: '#38bdf8' },
+  neon: { emoji: '⚡', name: 'Неон', color: '#a78bfa' },
+  gold: { emoji: '🌟', name: 'Золото', color: '#fbbf24' },
+  pink: { emoji: '💖', name: 'Розовый', color: '#ec4899' },
+};
+export function getFlame() {
+  const s = state.streak || 0;
+  let level = 1;
+  if (s >= 14) level = 5;
+  else if (s >= 7) level = 4;
+  else if (s >= 3) level = 3;
+  else if (s >= 1) level = 2;
+  const outfit = FLAME_STYLES[state.flameOutfit] || FLAME_STYLES.fire;
+  const size = level === 5 ? '🔥👑' : level === 4 ? '🔥🔥' : level >= 3 ? '🔥' : '✨';
+  return { streak: s, level, outfit, icon: outfit.emoji, size, name: outfit.name };
+}
+export function setFlameOutfit(style) {
+  if (!FLAME_STYLES[style]) return false;
+  state.flameOutfit = style;
+  save();
+  return true;
+}
+
+// ─── День рождения и дневной подарок ───────────────────────────────────────
+export function isBirthdayToday() {
+  const b = state.user?.birthday;
+  if (!b) return false;
+  const d = new Date(b);
+  const n = new Date();
+  return d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+}
+export function shouldShowBirthday() {
+  if (!isBirthdayToday()) return false;
+  const today = todayStr();
+  return state.lastBirthdayShown !== today;
+}
+export function markBirthdayShown() {
+  state.lastBirthdayShown = todayStr();
+  save();
+}
+export function isDailyGiftAvailable() {
+  const today = todayStr();
+  return state.dailyGiftDay !== today;
+}
+export function claimDailyGift() {
+  const today = todayStr();
+  if (state.dailyGiftDay === today) return false;
+  state.dailyGiftDay = today;
+  // лёгкий буст стрика
+  if (state.streak === 0) state.streak = 1;
+  save();
+  return true;
 }

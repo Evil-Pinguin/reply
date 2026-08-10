@@ -26,7 +26,7 @@ const TOPIC_DEFS = [
   { id: 'hobby', nom: 'хобби', re: /хобби|увлеч|люблю делать|свободное время|чем занимаешься|выходн/ },
   { id: 'books', nom: 'книги', re: /книг|чита|автор|роман|рассказ|поэт|стих|библиотек/ },
   { id: 'art', nom: 'искусство', re: /искусств|картин|рис|выставк|музей|галере|художник|твор/ },
-  { id: 'games', nom: 'игры', re: /игр|играть|гейм|консол|квест|нард|шахмат|дота/ },
+  { id: 'games', nom: 'игры', re: /игр|играть|гейм|консол|квест|нард|шахмат|дота|геншин|genshin|мобилк|примогем/ },
   { id: 'weather', nom: 'погода', re: /погод|дожд|солнц|снег|ветер|облак|холодн|тепло|закат|рассвет|осень/ },
   { id: 'sport', nom: 'спорт', re: /спорт|бег|трен|зал|плав|велосипед|йог|фитнес|футбол|лыж/ },
   { id: 'deep', nom: 'жизнь', re: /боюсь|страшно|смысл|одиночеств|смерт|страх|грустн|философ|душа|время/ },
@@ -92,23 +92,27 @@ const OPENER_NEUTRAL = [
   'Слушаю тебя.', 'Правда?', 'Ого.', 'Ммм.', 'Интересно.', 'Вот это поворот.', 'Рассказывай-рассказывай.',
 ];
 
-const FOLLOWUPS = [
+const FOLLOWUPS_TOPIC = [
   (top) => `А вот ${top} — это отдельная тема. Что тебя в ней больше всего цепляет?`,
   (top) => `Слушай, а расскажи про ${top}? Я могу слушать бесконечно`,
-  (top) => `А ты давно в этом?` ,
+  (top) => `А ты давно в этом?`,
   (top) => `Помню, ты про это заговорил(а) — и я сразу понял(а), что будет интересно`,
+];
+const FOLLOWUPS_GENERIC = [
   () => 'А у тебя как с этим?',
   () => 'Расскажи подробнее, мне правда важно',
   () => 'А ты что об этом думаешь?',
   () => 'Что тебя в этом больше всего зацепило?',
   () => 'А если бы можно было выбрать — ты бы что сделал(а)?',
   () => 'Теперь твоя очередь: что-нибудь ещё расскажешь?',
+  () => 'Мне правда интересно — продолжи?',
+  () => 'Звучит так, будто за этим есть история. Расскажешь?',
 ];
 
 const GENERIC_TOPIC = {
   books: ['Книги — это способ прожить чужие жизни, не вставая с кресла', 'Я читаю перед сном — иначе не засыпаю', 'Иногда книга попадает в нужный момент — и это магия'],
   art: ['Искусство — это когда чувствуешь, что кто-то тебя понял', 'Люблю рассматривать картины и придумывать их истории', 'Красота вокруг — это то, что спасает в любой день'],
-  games: ['Игры — это такие маленькие приключения, которые можно разделить с кем-то', 'Я не геймер-экстремал, но люблю уютные игры', 'В играх можно побыть кем угодно — это и притягивает'],
+  games: ['Игры — это такие маленькие приключения, которые можно разделить с кем-то', 'Геншин? О, я как раз фармлю примогемы — кто твой мейн?', 'В играх можно побыть кем угодно — это и притягивает'],
   weather: ['Дождь за окном — лучший повод никуда не спешить', 'Мне нравится любая погода, если рядом нужный человек', 'Закаты — моё слабое место, всегда останавливаюсь посмотреть'],
   sport: ['Движение — это жизнь, звучит банально, но правда', 'Я не профи, но люблю гулять и плавать', 'Спорт для меня — это скорее про энергию, чем про рекорды'],
   deep: ['Мне кажется, главное — не бояться быть собой', 'Иногда я думаю об этом ночью. Спасает музыка', 'Глубокие темы — мои любимые, они делают нас ближе'],
@@ -238,8 +242,34 @@ export class ChatBrain {
     return pool[i];
   }
 
+  // ── детектор шифра / бессмысленного ввода
+  _isGibberish(text, a) {
+    const t = text.trim().toLowerCase();
+    if (t.length < 2) return false;
+    if (a.topics.length || a.isQuestion || a.positive || a.negative || a.personal) return false;
+    if (t.includes(' ')) return false;
+    if (/^(привет|пока|геншин|genshin|спасибо|да|нет|ок|ага|угу|хай|йо)$/i.test(t)) return false;
+    if (t.length >= 4 && t.length <= 14 && /^[a-zа-яё0-9]+$/i.test(t)) {
+      const vowels = (t.match(/[aeiouаеёиоуыэюя]/gi) || []).length;
+      if (vowels / t.length < 0.22) return true;
+      if (t.length >= 8) return true;
+    }
+    if (/^(.)\1{3,}/.test(t)) return true;
+    if (/^[^aeiouаеёиоуыэюя]{5,}$/.test(t)) return true;
+    return false;
+  }
+
   // ── анализ и композиция ответа ────────────────────────────────────────────
   _compose(a, text) {
+    if (this._isGibberish(text, a)) {
+      return this._pickNoRepeat([
+        'Хм, похоже клавиатура убежала 😄 Напишешь по-человечески?',
+        'Это шифр? Я люблю загадки, но подскажи чуть-чуть 😉',
+        'Похоже на заклинание из Геншина ✨ Переведёшь?',
+        'Ой, не разобрал — можешь ещё раз, но словами?',
+        'Т9 шалит? Попробуй ещё раз, я внимательно слушаю',
+      ], 'gib');
+    }
     const parts = [];
     const views = this.char.views || {};
     const top = a.topics[0];
@@ -260,6 +290,10 @@ export class ChatBrain {
     if (content) {
       parts.push(this._emojiLine(content));
       this.topics.add(top.id);
+    } else if (!top && chance(0.35)) {
+      // нет темы — иногда подкинуть случайный взгляд, чтобы не быть пустым
+      const allViews = Object.values(views).flat();
+      if (allViews.length) parts.push(this._emojiLine(this._pickNoRepeat(allViews, 'view-rand')));
     }
 
     // живой мир: иногда заметить сезон или главу истории
@@ -291,11 +325,18 @@ export class ChatBrain {
       this._addStat('trust', 1);
     }
 
-    // вопрос в ответ (если тема известна — привязать к ней)
+    // вопрос в ответ — теперь без null
     if (a.isQuestion || chance(this.person.talk * 0.75)) {
-      const fu = pick(FOLLOWUPS);
-      if (top) parts.push(fu(top.nom));
-      else parts.push(fu(null));
+      let fu;
+      if (top) {
+        fu = chance(0.65) ? pick(FOLLOWUPS_TOPIC) : pick(FOLLOWUPS_GENERIC);
+        const line = fu(top.nom);
+        if (line && !line.includes('null') && !line.includes('undefined')) parts.push(line);
+        else parts.push(pick(FOLLOWUPS_GENERIC)());
+      } else {
+        fu = pick(FOLLOWUPS_GENERIC);
+        parts.push(fu());
+      }
     }
 
     let reply = parts.filter(Boolean).join(' ');
@@ -334,103 +375,15 @@ export class ChatBrain {
     this.history.push({ role: 'user', text });
     if (this.history.length > 40) this.history = this.history.slice(-40);
 
-    // ── интенты (короткие живые реакции) ──
-    if (INTENT_RE.joke.test(text)) {
-      this._addStat('humor', 2);
-      const r = pick([
-        'Ахахах 😂 Ты меня раскусил(а)',
-        'Окей, это смешно. Записываю в цитаты',
-        'Я чуть не поперхнулся(ась) от смеха!',
-        'Твои шутки опасны. Мне нравится 😄',
-        'Ладно, это было неожиданно смешно',
-      ]);
-      this._say(r, { emote: 'laugh', emoji: '😂' });
-      this._scheduleSecond(a);
-      return;
-    }
-    if (INTENT_RE.compliment.test(text)) {
-      this._addStat('romance', 2); this._addStat('sympathy', 1);
-      const r = pick([
-        'Ахах, спасибо… Ты умеешь смущать 😳',
-        'Это я-то?.. Ну, если ты так говоришь, я в это поверю',
-        'Так, я покраснел(а). Это всё ты',
-        'Говори ещё. Я записываю ✍️',
-        'От такого комплимента даже вечер стал теплее',
-      ]);
-      this._say(r, { emote: 'blush', emoji: '😳' });
-      return;
-    }
-    if (INTENT_RE.thanks.test(text)) {
-      this._addStat('trust', 1);
-      this._say(pick([
-        'Всегда пожалуйста. Для тебя — хоть каждый день',
-        'Не благодари, мне самому(ой) приятно',
-        'Это мелочь. Но приятно, что ты заметил(а)',
-        'Я рад(а), что тебе хорошо',
-      ]), { emote: 'happy' });
-      return;
-    }
-    if (INTENT_RE.sorry.test(text)) {
-      this._say(pick([
-        'Всё нормально, правда 😊',
-        'Да ладно, я уже забыл(а). Рассказывай дальше',
-        'За это я тебя прощаю. Но только один раз 😄',
-        'Ничего страшного, ты мне всё равно нравишься',
-      ]), { emote: 'happy' });
-      return;
-    }
-    if (INTENT_RE.bye.test(text)) {
-      this._say(pick([
-        'Куда ты?.. Ладно, шучу. Но возвращайся',
-        'Уже? А мне так хорошо… До встречи!',
-        'Беги-беги. Я буду ждать следующего свидания 😊',
-        'Напиши мне, когда дойдёшь. Правда, я буду скучать',
-      ]), { emote: 'happy' });
-      return;
-    }
-    if (INTENT_RE.love.test(text) || INTENT_RE.flirt.test(text)) {
-      this._addStat('romance', 3); this._addStat('sympathy', 1);
-      this._say(pick([
-        'Ого… Так, мне нужно сесть. Точнее, я уже сижу. Но всё равно',
-        'Ты сейчас серьёзно?.. У меня мурашки',
-        'Я… не ожидал(а). Но мне очень приятно. Правда',
-        'Если это флирт — то у тебя отлично получается 😌',
-      ]), { emote: 'blush', emoji: '💗' });
-      return;
-    }
-    if (INTENT_RE.howareyou.test(text)) {
-      const moods = [
-        this.stats.romance > 8 ? 'Лучше всех. Ты рядом, музыка играет — чего ещё желать' : null,
-        this.stats.humor > 8 ? 'Супер! С тобой даже самый обычный вечер — как приключение' : null,
-        'Если честно, волновался(ась) перед встречей. Теперь — спокойно',
-        'Хорошо! Я как раз думал(а), о чём тебя спросить',
-        'Тепло. Наверное, это из-за этого места… или из-за тебя',
-      ].filter(Boolean);
-      this._say(this._emojiLine(pick(moods)), { emote: 'happy' });
-      return;
-    }
-    if (INTENT_RE.greet.test(text) && this.msgCount <= 3) {
-      this._say(pick([
-        'Привет-привет! Я уже заскучал(а) тут 😊',
-        'Ну наконец-то! Я думал(а), ты потерялся(ась) 😄',
-        'Привет! Сижу, улыбаюсь — и это твоя работа',
-        'Здравствуй! Я как раз собирался(ась) тебе писать',
-      ]), { emote: 'happy', emoji: '👋' });
-      return;
-    }
-
-    // ── генеративный ответ: сначала внешний ИИ (Groq), фолбэк — локальный мозг ──
+    // ── генеративный ответ: только внешний ИИ (Groq), шаблон убран по просьбе ──
     let reply = await this._tryAI(text);
     if (reply !== null) {
       this._say(this._emojiLine(reply), { emote: a.negative ? 'shy' : a.positive ? 'happy' : a.isQuestion ? 'think' : 'happy', ai: true });
     } else {
-      const local = this._compose(a, text);
-      const emote = a.negative ? 'shy' : a.positive ? 'happy' : a.isQuestion ? 'think' : 'happy';
-      this._say(this._emojiLine(local), { emote });
-      // иногда вернуться к тому, о чём говорили раньше
-      if (chance(0.18)) this._remember(a);
+      // в превью Arena сеть к Groq закрыта → честно говорим, не шаблоним
+      this._say('🤖 Groq сейчас недоступен в превью Arena (сеть закрыта). Запусти локально: GROQ_API_KEY=... python3 server.py → http://localhost:8080 — там отвечает Llama 3.3', { emote: 'think', emoji: '🤖', kind: 'system' });
+      return;
     }
-    this._scheduleSecond(a);
   }
 
   // вторая короткая реплика — как живой человек, который дописывает
@@ -828,15 +781,19 @@ export class ChatPanel {
 
     el.querySelector('.act-menu').addEventListener('click', () => this.onMenu && this.onMenu());
     el.querySelector('.act-finish').addEventListener('click', () => this.onFinish && this.onFinish());
-    el.querySelector('.ch-expand').addEventListener('click', () => {
-      el.classList.toggle('expanded');
-      this.onExpand && this.onExpand(el.classList.contains('expanded'));
+    const toggleFullscreen = () => {
+      const isExp = el.classList.toggle('expanded');
+      // стрелка ⤢ — покрывает весь экран чатом, повтор — возвращает
+      const ds = this.container.closest ? this.container.closest('.date-screen') : document.querySelector('.date-screen');
+      const target = ds || document.querySelector('.date-screen');
+      if (target) target.classList.toggle('chat-expanded', isExp);
+      const btn = el.querySelector('.ch-expand');
+      if (btn) btn.textContent = isExp ? '⤡' : '⤢';
+      if (this.onExpand) this.onExpand(isExp);
       this.scrollDown();
-    });
-    el.querySelector('.chat-handle').addEventListener('click', () => {
-      el.classList.toggle('expanded');
-      this.scrollDown();
-    });
+    };
+    el.querySelector('.ch-expand').addEventListener('click', toggleFullscreen);
+    el.querySelector('.chat-handle').addEventListener('click', toggleFullscreen);
     el.querySelector('.ci-send').addEventListener('click', () => this.submit());
     el.querySelector('.ci-voice').addEventListener('click', () => this.onVoice && this.onVoice());
     this.inputEl.addEventListener('keydown', (e) => {

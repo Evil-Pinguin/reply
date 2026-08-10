@@ -12,6 +12,7 @@ import {
   addGallery, unlock, relationOf, compatibilityWith, togglePremium, setPremium, cancelPremium, resetAll,
   refreshDeck, save, collect, setChapter, collectionCount,
   getTheme, setTheme, applyTheme, getFilters, setFilters, getDailySurprise, claimDailySurprise,
+  getFlame, setFlameOutfit, FLAME_STYLES, isBirthdayToday, shouldShowBirthday, markBirthdayShown, isDailyGiftAvailable, claimDailyGift,
 } from './state.js';
 import { sound } from './audio.js';
 import { floatEmoji, burstHearts, confetti } from './effects.js';
@@ -196,6 +197,59 @@ function maybeUnlock(id) {
   if (a && unlock(id)) achPopup(a);
 }
 
+function checkCelebrations() {
+  if (shouldShowBirthday()) {
+    setTimeout(() => showBirthdayModal(), 900);
+  } else if (isDailyGiftAvailable()) {
+    setTimeout(() => showDailyGiftModal(), 1100);
+  }
+}
+function showBirthdayModal() {
+  const st = getState();
+  const name = st.user?.name || 'друг';
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet-layer top';
+  sheet.innerHTML = `
+    <div class="overlay"></div>
+    <div class="sheet" style="text-align:center; padding:28px 20px;">
+      <div class="sheet-handle"></div>
+      <div style="font-size:52px; margin-bottom:10px;">🎂✨</div>
+      <h2 style="font-family:var(--disp); font-size:20px; font-weight:800;">С днём рождения, ${esc(name)}!</h2>
+      <p style="font-size:14px; color:var(--mut); margin:8px 0 16px;">Reply дарит тебе дневной премиум и конфетти — пусть год будет тёплым!</p>
+      <div style="padding:8px 14px; border-radius:999px; background:rgba(251,191,36,.15); border:1px solid rgba(251,191,36,.3); color:#fbbf24; font-weight:800; display:inline-block; margin-bottom:16px;">🎁 Дневной премиум активирован</div>
+      <button class="btn btn-primary" id="bdClose">Спасибо! 🎉</button>
+    </div>`;
+  app.appendChild(sheet);
+  markBirthdayShown();
+  if (!st.premium) { st.premium = true; save(); }
+  if (isDailyGiftAvailable()) claimDailyGift();
+  confetti(app);
+  sound.tada();
+  $('.overlay', sheet).addEventListener('click', () => sheet.remove());
+  $('#bdClose', sheet).addEventListener('click', () => sheet.remove());
+}
+function showDailyGiftModal() {
+  if (!isDailyGiftAvailable()) return;
+  claimDailyGift();
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet-layer top';
+  sheet.innerHTML = `
+    <div class="overlay"></div>
+    <div class="sheet" style="text-align:center; padding:24px 20px;">
+      <div class="sheet-handle"></div>
+      <div style="font-size:44px; margin-bottom:10px;">🎁</div>
+      <h2 style="font-family:var(--disp); font-size:18px; font-weight:800;">Дневной подарок</h2>
+      <p style="font-size:13px; color:var(--mut); margin:6px 0 12px;">Заходи каждый день — огонёк растёт, как в Duolingo 🔥</p>
+      <div style="padding:8px 14px; border-radius:999px; background:rgba(251,146,60,.14); border:1px solid rgba(251,146,60,.25); color:#f59e0b; font-weight:800; display:inline-block; margin-bottom:14px;">+1 к стрику 🔥 ${getState().streak} дней</div>
+      <button class="btn btn-primary" id="dgClose">Забрать 🎉</button>
+    </div>`;
+  app.appendChild(sheet);
+  confetti(app);
+  sound.coin();
+  $('.overlay', sheet).addEventListener('click', () => sheet.remove());
+  $('#dgClose', sheet).addEventListener('click', () => sheet.remove());
+}
+
 // ─── SPLASH ─────────────────────────────────────────────────────────────────
 
 
@@ -283,11 +337,28 @@ function openFiltersSheet(onApply) {
         ${CITIES.map((c) => `<button class="chip ${f.city === c ? 'on' : ''}" data-v="${c}">${c}</button>`).join('')}
       </div>
 
-      <p class="ob-label" style="margin-top:14px;">Возраст: <b id="fltAgeLabel">${f.minAge} – ${f.maxAge} лет</b></p>
-      <div style="display:flex; gap:10px; align-items:center; margin-top:4px;">
-        <input type="range" id="fltMinAge" min="18" max="35" value="${f.minAge}" style="flex:1;">
-        <input type="range" id="fltMaxAge" min="18" max="35" value="${f.maxAge}" style="flex:1;">
+      <p class="ob-label" style="margin-top:14px;">Возраст</p>
+      <div class="flt-age-box" style="display:flex; gap:12px; margin-top:8px;">
+        <div class="flt-age-col" style="flex:1; background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:12px; text-align:center;">
+          <div style="font-size:11px; color:var(--mut); font-weight:800; letter-spacing:.5px;">ОТ</div>
+          <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-top:6px;">
+            <button class="flt-age-btn" id="fltMinMinus">−</button>
+            <b id="fltMinVal" style="font-size:22px; min-width:32px;">${f.minAge}</b>
+            <button class="flt-age-btn" id="fltMinPlus">+</button>
+          </div>
+          <input type="range" id="fltMinAge" min="18" max="35" value="${f.minAge}" style="width:100%; margin-top:8px;">
+        </div>
+        <div class="flt-age-col" style="flex:1; background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:12px; text-align:center;">
+          <div style="font-size:11px; color:var(--mut); font-weight:800; letter-spacing:.5px;">ДО</div>
+          <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-top:6px;">
+            <button class="flt-age-btn" id="fltMaxMinus">−</button>
+            <b id="fltMaxVal" style="font-size:22px; min-width:32px;">${f.maxAge}</b>
+            <button class="flt-age-btn" id="fltMaxPlus">+</button>
+          </div>
+          <input type="range" id="fltMaxAge" min="18" max="35" value="${f.maxAge}" style="width:100%; margin-top:8px;">
+        </div>
       </div>
+      <div style="text-align:center; margin-top:8px; font-size:12px; color:var(--mut); font-weight:700;" id="fltAgeLabel">${f.minAge} – ${f.maxAge} лет</div>
 
       <div class="edit-actions" style="margin-top:20px;">
         <button class="btn btn-primary" id="fltApply">Применить</button>
@@ -320,12 +391,18 @@ function openFiltersSheet(onApply) {
   const updateAge = () => {
     let min = Number(minSlider.value);
     let max = Number(maxSlider.value);
-    if (min > max) { [min, max] = [max, min]; }
+    if (min > max) { [min, max] = [max, min]; minSlider.value = min; maxSlider.value = max; }
     f.minAge = min; f.maxAge = max;
     $('#fltAgeLabel', sheet).textContent = `${min} – ${max} лет`;
+    const mv = $('#fltMinVal', sheet); if (mv) mv.textContent = min;
+    const xv = $('#fltMaxVal', sheet); if (xv) xv.textContent = max;
   };
   minSlider.addEventListener('input', updateAge);
   maxSlider.addEventListener('input', updateAge);
+  $('#fltMinMinus', sheet)?.addEventListener('click', () => { minSlider.value = Math.max(18, Number(minSlider.value)-1); updateAge(); sound.pop(); });
+  $('#fltMinPlus', sheet)?.addEventListener('click', () => { minSlider.value = Math.min(35, Number(minSlider.value)+1); updateAge(); sound.pop(); });
+  $('#fltMaxMinus', sheet)?.addEventListener('click', () => { maxSlider.value = Math.max(18, Number(maxSlider.value)-1); updateAge(); sound.pop(); });
+  $('#fltMaxPlus', sheet)?.addEventListener('click', () => { maxSlider.value = Math.min(35, Number(maxSlider.value)+1); updateAge(); sound.pop(); });
 
   $('#fltApply', sheet).addEventListener('click', () => {
     setFilters(f);
@@ -378,7 +455,6 @@ function renderSplash() {
       <p class="splash-tag">Не чат.<br>Настоящее первое свидание.</p>
       <button class="btn btn-primary btn-lg splash-cta">Начать</button>
       <p class="splash-sub">Место, где переписка становится воспоминанием</p>
-      <a href="/api/download" class="splash-zip-link" download="reply-project.zip">💾 Скачать проект (ZIP)</a>
     </div>`;
   const btn = $('.splash-cta');
   setTimeout(() => btn.classList.add('ready'), 300);
@@ -761,6 +837,7 @@ function renderMain(opts = {}) {
   });
   const renders = { discover: tabDiscover, dates: tabDates, memories: tabMemories, collections: tabCollections, profile: tabProfile };
   (renders[tab] || tabDiscover)(tc);
+  if (tab === 'discover' || tab === 'profile') setTimeout(checkCelebrations, 800);
 }
 
 // ─── ТАБ: ЛЮДИ (свайпы) ─────────────────────────────────────────────────────
@@ -775,9 +852,8 @@ function tabDiscover(tc) {
     <header class="topbar">
       <div class="tb-logo">Reply<span class="tb-dot"></span></div>
       <div class="tb-right">
-        <span class="streak" title="Серия свиданий">🔥 ${st.streak}</span>
+        <span class="streak" title="Огонёк ${getFlame().level} ур.">${getFlame().icon} ${getFlame().streak}</span>
         <button class="tb-icon tb-surprise ${daily.claimed ? '' : 'pulse'}" id="btnSurprise" title="Сюрприз дня">🎁</button>
-        <button class="tb-icon" id="btnNight" title="Ночной режим">🌙</button>
         <button class="tb-icon tb-filter ${hasFilter ? 'has-filter' : ''}" id="btnFilter" title="Фильтры">🎛️</button>
         <button class="tb-icon" data-act="settings" title="Настройки">⚙️</button>
       </div>
@@ -797,7 +873,6 @@ function tabDiscover(tc) {
 
   $('[data-act="settings"]').addEventListener('click', openSettings);
   $('#btnSurprise').addEventListener('click', () => openDailySurprise(() => tabDiscover(tc)));
-  $('#btnNight').addEventListener('click', openGoodNightModal);
   $('#btnFilter').addEventListener('click', () => openFiltersSheet(() => tabDiscover(tc)));
 
   $('.da-pass').addEventListener('click', () => actOn('pass'));
@@ -1041,12 +1116,25 @@ function renderPlanner({ charId }) {
         <div class="pl-emoji">📅</div>
         <h2>Когда встретимся?</h2>
         <p class="pl-sub">Выберите день</p>
-        <div class="day-chips"></div>
+        <div class="pl-nav-wrap">
+          <button class="pl-nav" id="dayPrev" aria-label="Назад">‹</button>
+          <div class="day-chips"></div>
+          <button class="pl-nav" id="dayNext" aria-label="Вперёд">›</button>
+        </div>
         <p class="pl-sub">Выберите время</p>
         <div class="time-chips"></div>
         <div class="time-conflict" hidden></div>
       </div>`;
     const dc = $('.day-chips');
+    // стрелки по краям для удобного перелистывания дней
+    const dayPrevBtn = $('#dayPrev', body);
+    const dayNextBtn = $('#dayNext', body);
+    const scrollDays = (dir) => {
+      dc.scrollBy({ left: dir * 88, behavior: 'smooth' });
+      sound.pop();
+    };
+    dayPrevBtn?.addEventListener('click', () => scrollDays(-1));
+    dayNextBtn?.addEventListener('click', () => scrollDays(1));
     const conflictEl = $('.time-conflict');
     const checkConflict = () => {
       if (!plan.dateISO || !plan.time) { conflictEl.hidden = true; return; }
@@ -1718,7 +1806,7 @@ function renderRecap({ charId }) {
 
 function tabDates(tc) {
   const st = getState();
-  let html = `<header class="topbar"><div class="tb-logo">Reply<span class="tb-dot"></span></div><div class="tb-right"><span class="streak">🔥 ${st.streak}</span></div></header>`;
+  let html = `<header class="topbar"><div class="tb-logo">Reply<span class="tb-dot"></span></div><div class="tb-right"><span class="streak" title="Огонёк ${getFlame().level} ур.">${getFlame().icon} ${getFlame().streak}</span></div></header>`;
 
   // ── запланированные свидания (их может быть несколько, но не в одно время)
   const plans = [...(st.planned || [])]
@@ -1795,7 +1883,7 @@ function tabDates(tc) {
 
 function tabMemories(tc) {
   const st = getState();
-  let html = `<header class="topbar"><div class="tb-logo">Reply<span class="tb-dot"></span></div><div class="tb-right"><span class="streak">🔥 ${st.streak}</span></div></header>
+  let html = `<header class="topbar"><div class="tb-logo">Reply<span class="tb-dot"></span></div><div class="tb-right"><span class="streak" title="Огонёк ${getFlame().level} ур.">${getFlame().icon} ${getFlame().streak}</span></div></header>
   <h2 class="page-title">📖 История</h2>`;
 
   // главы истории отношений: у каждого заметченного персонажа своя
@@ -1896,7 +1984,7 @@ function tabCollections(tc) {
 
   let html = `
     <header class="topbar"><div class="tb-logo">Reply<span class="tb-dot"></span></div>
-      <div class="tb-right"><span class="streak">🔥 ${st.streak}</span></div>
+      <div class="tb-right"><span class="streak" title="Огонёк ${getFlame().level} ур.">${getFlame().icon} ${getFlame().streak}</span></div>
     </header>
     <h2 class="page-title">🎁 Коллекции</h2>
     <div class="coll-summary">
@@ -1962,7 +2050,7 @@ function tabProfile(tc) {
   let html = `
     <header class="topbar"><div class="tb-logo">Reply<span class="tb-dot"></span></div>
       <div class="tb-right">
-        <span class="streak">🔥 ${st.streak}</span>
+        <span class="streak" title="Огонёк ${getFlame().level} ур.">${getFlame().icon} ${getFlame().streak}</span>
         <button class="tb-icon" data-act="settings2">⚙️</button>
       </div>
     </header>
@@ -1979,11 +2067,22 @@ function tabProfile(tc) {
         <p class="prof-city">📍 ${esc(u.city)} · ${esc(u.avatarLabel)}</p>
         <p class="prof-about">${esc(u.about || '')}</p>
         <div class="prof-stats">
-          <div class="ps"><b>${compatTop()}</b><span>Совместимость</span></div>
           <div class="ps"><b>${datesCount}</b><span>Свиданий</span></div>
           <div class="ps"><b>${achievements}</b><span>Наград</span></div>
           <div class="ps"><b>${st.streak}</b><span>Серия 🔥</span></div>
         </div>
+        ${(() => { const f = getFlame(); return `
+        <div class="flame-wrap" id="flameWrap" title="Нажми чтобы одеть огонёк">
+          <div class="flame-emoji">${f.icon}</div>
+          <div style="flex:1; text-align:left;">
+            <b>${f.streak ? `Огонёк ${f.level} ур. · ${f.streak} ${f.streak===1?'день':'дней'} подряд` : 'Огонёк спит · зайди завтра'}</b>
+            <small class="flame-level" style="display:block; color:var(--mut); font-size:11px;">Стиль: ${f.name} · нажми чтобы переодеть</small>
+          </div>
+          <span style="font-size:18px;">👗</span>
+        </div>
+        <div class="flame-outfits" id="flameOutfits" hidden>
+          ${Object.entries(FLAME_STYLES).map(([k,v]) => `<button class="flame-outfit ${f.outfit.name===v.name?'on':''}" data-style="${k}" title="${v.name}">${v.emoji}</button>`).join('')}
+        </div>`; })()}
         <div class="prof-card">
           <div class="pc-row" id="profMbtiRow" style="cursor:pointer;">
             <span>🧬</span>
@@ -2028,10 +2127,6 @@ function tabProfile(tc) {
               </div>`;
           }).join('')}
         </div>
-
-        <div style="margin-top:24px; text-align:center;">
-          <a href="/api/download" class="btn btn-outline" download="reply-project.zip" style="display:inline-flex; width:auto; padding:10px 20px;">💾 Скачать проект (ZIP)</a>
-        </div>
       </div>
     </div>`;
 
@@ -2046,6 +2141,20 @@ function tabProfile(tc) {
   if (premBtn) premBtn.addEventListener('click', openPremium);
   tc.querySelector('[data-act="settings2"]').addEventListener('click', openSettings);
   tc.querySelector('[data-edit-profile="1"]')?.addEventListener('click', openEditProfile);
+  // огонёк — переодевание
+  $('#flameWrap', tc)?.addEventListener('click', () => {
+    const box = $('#flameOutfits', tc);
+    if (box) box.hidden = !box.hidden;
+    sound.pop();
+  });
+  $$('.flame-outfit', tc).forEach((b) => {
+    b.addEventListener('click', () => {
+      setFlameOutfit(b.dataset.style);
+      sound.pop();
+      toast(`Огонёк теперь ${FLAME_STYLES[b.dataset.style]?.name || b.dataset.style}`, FLAME_STYLES[b.dataset.style]?.emoji || '🔥');
+      tabProfile(tc);
+    });
+  });
 
   function compatTop() {
     if (!st.matched.length) return '—';
@@ -2482,8 +2591,6 @@ function openSettings() {
       `}
 
       <div style="margin-top:16px; display:flex; flex-direction:column; gap:8px;">
-        <button class="btn btn-ghost" id="setNight">🌙 Пожелать доброй ночи</button>
-        <a href="/api/download" class="btn btn-outline" download="reply-project.zip" style="text-align:center;">💾 Скачать архив проекта (ZIP)</a>
         <button class="btn btn-ghost" id="setReset" style="color:var(--mut2);">Сбросить все данные</button>
       </div>
       <p class="prem-fine" style="text-align:center; margin-top:12px;">Reply v1.2.7 · полная версия · живой мир + ИИ Groq + сезоны + главы</p>
@@ -2521,11 +2628,6 @@ function openSettings() {
 
   $('#setCancelPrem', sheet)?.addEventListener('click', () => {
     openCancelFlow(() => { sheet.remove(); openSettings(); });
-  });
-
-  $('#setNight', sheet)?.addEventListener('click', () => {
-    sheet.remove();
-    openGoodNightModal();
   });
 
   $('#setReset', sheet).addEventListener('click', () => {
