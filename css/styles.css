@@ -462,9 +462,15 @@ img { display: block; max-width: 100%; }
 .pl-emoji { font-size: 48px; align-self: center; margin-top: 6px; filter: drop-shadow(0 10px 22px rgba(255, 122, 158, .35)); }
 .pl-step h2 { font-family: var(--disp); font-size: 21px; font-weight: 700; text-align: center; }
 .pl-sub { color: var(--mut); font-size: 13px; text-align: center; }
-.pl-actions { padding: 8px 20px 0; }
+.pl-actions { padding: 12px 20px 0; display: flex; justify-content: center; }
+.pl-actions .btn { min-width: 220px; }
+.pl-nav-wrap { display: flex; align-items: center; gap: 8px; }
+.pl-nav { width: 36px; height: 68px; border-radius: 14px; background: var(--card); border: 1px solid var(--stroke); font-size: 20px; display: grid; place-items: center; flex: 0 0 auto; transition: all .2s; }
+.pl-nav:active { transform: scale(.92); background: var(--card2); }
+.pl-nav:disabled { opacity: .28; pointer-events: none; }
+.day-chips { display: flex; gap: 8px; overflow-x: auto; padding: 6px 2px 12px; scroll-snap-type: x mandatory; flex: 1; scrollbar-width: none; }
+.day-chips::-webkit-scrollbar { display: none; }
 
-.day-chips { display: flex; gap: 8px; overflow-x: auto; padding: 6px 2px 12px; scroll-snap-type: x mandatory; }
 .day-chip {
   flex: 0 0 auto;
   width: 68px;
@@ -714,7 +720,7 @@ img { display: block; max-width: 100%; }
 @keyframes filmFlicker { 0%, 100% { opacity: 1; } 92% { opacity: 1; } 94% { opacity: .3; } 96% { opacity: 1; } }
 
 /* ── ЧАТ ───────────────────────────────────────────────────────────────── */
-.chat-wrap { position: absolute; left: 0; right: 0; bottom: 0; top: 42%; z-index: 20; pointer-events: none; }
+.chat-wrap { position: absolute; left: 0; right: 0; bottom: 0; top: 42%; z-index: 20; pointer-events: none; transition: top .45s cubic-bezier(.22, .9, .3, 1); }
 .chat-sheet {
   position: absolute;
   inset: 0;
@@ -731,6 +737,10 @@ img { display: block; max-width: 100%; }
   transition: all .45s cubic-bezier(.22, .9, .3, 1);
 }
 .chat-sheet.expanded { top: 8%; }
+/* полноэкранный чат: второе нажатие на ⤢ — покрывает всю сцену, повтор — возвращает */
+.date-screen.chat-expanded .chat-wrap { top: 0; }
+.date-screen.chat-expanded .chat-sheet { border-radius: 0; }
+.date-screen.chat-expanded .chat-sheet.expanded { top: 0; }
 .chat-handle { width: 44px; height: 5px; border-radius: 99px; background: rgba(255, 255, 255, .25); margin: 10px auto 4px; flex: 0 0 auto; cursor: pointer; }
 
 .chat-head { display: flex; align-items: center; gap: 10px; padding: 6px 16px 8px; }
@@ -977,10 +987,10 @@ img { display: block; max-width: 100%; }
 
 /* ── ПРОФИЛЬ ───────────────────────────────────────────────────────────── */
 .profile { padding-bottom: 20px; }
-.prof-cover { position: relative; height: 210px; background: linear-gradient(160deg, #8b5cf6, #ec4899 55%, #ff8e53); overflow: hidden; }
-.pc-gradient { position: absolute; inset: 0; background: radial-gradient(400px 200px at 20% 10%, rgba(255, 255, 255, .25), transparent 60%); }
-.pc-avatar { position: absolute; bottom: -34px; left: 50%; transform: translateX(-50%); width: 112px; height: 112px; border-radius: 26px; background: linear-gradient(160deg, #241c40, #171228); border: 4px solid var(--bg); font-size: 52px; display: grid; place-items: center; box-shadow: 0 14px 40px rgba(0, 0, 0, .5); overflow: hidden; }
-.prof-body { padding: 48px 22px 20px; display: flex; flex-direction: column; gap: 6px; }
+.prof-cover { position: relative; height: 200px; background: linear-gradient(160deg, #8b5cf6, #ec4899 55%, #ff8e53); overflow: visible; }
+.pc-gradient { position: absolute; inset: 0; background: radial-gradient(400px 200px at 20% 10%, rgba(255, 255, 255, .25), transparent 60%); border-radius: 0 0 24px 24px; overflow: hidden; }
+.pc-avatar { position: absolute; bottom: -42px; left: 50%; transform: translateX(-50%); width: 118px; height: 118px; border-radius: 28px; background: linear-gradient(160deg, #241c40, #171228); border: 4px solid var(--bg); font-size: 52px; display: grid; place-items: center; box-shadow: 0 16px 44px rgba(0, 0, 0, .55); overflow: hidden; z-index: 2; }
+.prof-body { padding: 56px 22px 20px; display: flex; flex-direction: column; gap: 6px; }
 .prof-name { font-family: var(--disp); font-size: 21px; text-align: center; }
 .prof-verify { color: #38bdf8; font-size: 17px; }
 .prof-city { text-align: center; color: var(--mut); font-size: 13px; }

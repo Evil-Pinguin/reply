@@ -74,21 +74,28 @@ function parseReply(data) {
 }
 
 // POST-вызов. Вернёт: реплику | 'no_key' (сервер жив, но нет ключа) | null (недоступен)
+// таймаут 7с — чтобы локальный мозг не ждал 30с пока Groq висит
 async function postAI(payload) {
   let res;
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const to = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (e) {} }, 7000) : null;
   try {
     res = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: ctrl ? ctrl.signal : undefined,
     });
   } catch (e) {
+    if (to) clearTimeout(to);
     return null;
   }
+  if (to) clearTimeout(to);
   if (!res.ok) return null;
   const data = await res.json().catch(() => ({}));
   if (!data.ok) {
-    if (data.error === 'no_key' || data.error === 'groq_error') return 'no_key';
+    if (data.error === 'no_key') return 'no_key';
+    if (data.error === 'groq_error') return null; // сеть/ключ — фолбэк на локальный мозг + защёлка
     return null;
   }
   return parseReply(data);
@@ -129,16 +136,21 @@ function toB64(str) {
 
 async function getAI(payload) {
   let res;
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const to = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (e) {} }, 7000) : null;
   try {
     const q = encodeURIComponent(toB64(JSON.stringify(compactPayload(payload))));
-    res = await fetch('/api/ai?q=' + q, { method: 'GET' });
+    res = await fetch('/api/ai?q=' + q, { method: 'GET', signal: ctrl ? ctrl.signal : undefined });
   } catch (e) {
+    if (to) clearTimeout(to);
     return null;
   }
+  if (to) clearTimeout(to);
   if (!res.ok) return null;
   const data = await res.json().catch(() => ({}));
   if (!data.ok) {
-    if (data.error === 'no_key' || data.error === 'groq_error') return 'no_key';
+    if (data.error === 'no_key') return 'no_key';
+    if (data.error === 'groq_error') return null;
     return null;
   }
   return parseReply(data);

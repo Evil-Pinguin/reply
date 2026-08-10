@@ -828,15 +828,19 @@ export class ChatPanel {
 
     el.querySelector('.act-menu').addEventListener('click', () => this.onMenu && this.onMenu());
     el.querySelector('.act-finish').addEventListener('click', () => this.onFinish && this.onFinish());
-    el.querySelector('.ch-expand').addEventListener('click', () => {
-      el.classList.toggle('expanded');
-      this.onExpand && this.onExpand(el.classList.contains('expanded'));
+    const toggleFullscreen = () => {
+      const isExp = el.classList.toggle('expanded');
+      // стрелка ⤢ — покрывает весь экран чатом, повтор — возвращает
+      const ds = this.container.closest ? this.container.closest('.date-screen') : document.querySelector('.date-screen');
+      const target = ds || document.querySelector('.date-screen');
+      if (target) target.classList.toggle('chat-expanded', isExp);
+      const btn = el.querySelector('.ch-expand');
+      if (btn) btn.textContent = isExp ? '⤡' : '⤢';
+      if (this.onExpand) this.onExpand(isExp);
       this.scrollDown();
-    });
-    el.querySelector('.chat-handle').addEventListener('click', () => {
-      el.classList.toggle('expanded');
-      this.scrollDown();
-    });
+    };
+    el.querySelector('.ch-expand').addEventListener('click', toggleFullscreen);
+    el.querySelector('.chat-handle').addEventListener('click', toggleFullscreen);
     el.querySelector('.ci-send').addEventListener('click', () => this.submit());
     el.querySelector('.ci-voice').addEventListener('click', () => this.onVoice && this.onVoice());
     this.inputEl.addEventListener('keydown', (e) => {

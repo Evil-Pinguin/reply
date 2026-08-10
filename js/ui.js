@@ -1041,12 +1041,25 @@ function renderPlanner({ charId }) {
         <div class="pl-emoji">📅</div>
         <h2>Когда встретимся?</h2>
         <p class="pl-sub">Выберите день</p>
-        <div class="day-chips"></div>
+        <div class="pl-nav-wrap">
+          <button class="pl-nav" id="dayPrev" aria-label="Назад">‹</button>
+          <div class="day-chips"></div>
+          <button class="pl-nav" id="dayNext" aria-label="Вперёд">›</button>
+        </div>
         <p class="pl-sub">Выберите время</p>
         <div class="time-chips"></div>
         <div class="time-conflict" hidden></div>
       </div>`;
     const dc = $('.day-chips');
+    // стрелки по краям для удобного перелистывания дней
+    const prevBtn = $('#dayPrev', body);
+    const nextBtn = $('#dayNext', body);
+    const scrollDays = (dir) => {
+      dc.scrollBy({ left: dir * 88, behavior: 'smooth' });
+      sound.pop();
+    };
+    prevBtn?.addEventListener('click', () => scrollDays(-1));
+    nextBtn?.addEventListener('click', () => scrollDays(1));
     const conflictEl = $('.time-conflict');
     const checkConflict = () => {
       if (!plan.dateISO || !plan.time) { conflictEl.hidden = true; return; }
