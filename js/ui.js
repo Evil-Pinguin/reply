@@ -1052,14 +1052,14 @@ function renderPlanner({ charId }) {
       </div>`;
     const dc = $('.day-chips');
     // стрелки по краям для удобного перелистывания дней
-    const prevBtn = $('#dayPrev', body);
-    const nextBtn = $('#dayNext', body);
+    const dayPrevBtn = $('#dayPrev', body);
+    const dayNextBtn = $('#dayNext', body);
     const scrollDays = (dir) => {
       dc.scrollBy({ left: dir * 88, behavior: 'smooth' });
       sound.pop();
     };
-    prevBtn?.addEventListener('click', () => scrollDays(-1));
-    nextBtn?.addEventListener('click', () => scrollDays(1));
+    dayPrevBtn?.addEventListener('click', () => scrollDays(-1));
+    dayNextBtn?.addEventListener('click', () => scrollDays(1));
     const conflictEl = $('.time-conflict');
     const checkConflict = () => {
       if (!plan.dateISO || !plan.time) { conflictEl.hidden = true; return; }
