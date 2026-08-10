@@ -219,6 +219,12 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         p = (path or '').lower()
         return p in self._BLOCKED or p.endswith('.key') or p.endswith('.secret')
 
+    def do_HEAD(self):
+        if self._is_blocked(self._api_path()):
+            self.send_error(404, 'Not Found')
+            return
+        super().do_HEAD()
+
     def do_GET(self):
         if self._is_blocked(self._api_path()):
             self.send_error(404, 'Not Found')
