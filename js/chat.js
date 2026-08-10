@@ -460,18 +460,15 @@ export class ChatBrain {
       return;
     }
 
-    // ── генеративный ответ: сначала внешний ИИ (Groq), фолбэк — локальный мозг ──
+    // ── генеративный ответ: только внешний ИИ (Groq), шаблон убран по просьбе ──
     let reply = await this._tryAI(text);
     if (reply !== null) {
       this._say(this._emojiLine(reply), { emote: a.negative ? 'shy' : a.positive ? 'happy' : a.isQuestion ? 'think' : 'happy', ai: true });
     } else {
-      const local = this._compose(a, text);
-      const emote = a.negative ? 'shy' : a.positive ? 'happy' : a.isQuestion ? 'think' : 'happy';
-      this._say(this._emojiLine(local), { emote });
-      // иногда вернуться к тому, о чём говорили раньше
-      if (chance(0.18)) this._remember(a);
+      // в превью Arena сеть к Groq закрыта → честно говорим, не шаблоним
+      this._say('🤖 Groq сейчас недоступен в превью Arena (сеть закрыта). Запусти локально: GROQ_API_KEY=... python3 server.py → http://localhost:8080 — там отвечает Llama 3.3', { emote: 'think', emoji: '🤖', kind: 'system' });
+      return;
     }
-    this._scheduleSecond(a);
   }
 
   // вторая короткая реплика — как живой человек, который дописывает
