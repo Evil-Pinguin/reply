@@ -12,6 +12,7 @@ import {
   addGallery, unlock, relationOf, compatibilityWith, togglePremium, setPremium, cancelPremium, resetAll,
   refreshDeck, save, collect, setChapter, collectionCount,
   getTheme, setTheme, applyTheme, getFilters, setFilters, getDailySurprise, claimDailySurprise,
+  getFlame, setFlameOutfit, FLAME_STYLES, isBirthdayToday, shouldShowBirthday, markBirthdayShown, isDailyGiftAvailable, claimDailyGift,
 } from './state.js';
 import { sound } from './audio.js';
 import { floatEmoji, burstHearts, confetti } from './effects.js';
@@ -194,6 +195,59 @@ function achPopup(a) {
 function maybeUnlock(id) {
   const a = _ACH.find((x) => x.id === id);
   if (a && unlock(id)) achPopup(a);
+}
+
+function checkCelebrations() {
+  if (shouldShowBirthday()) {
+    setTimeout(() => showBirthdayModal(), 900);
+  } else if (isDailyGiftAvailable()) {
+    setTimeout(() => showDailyGiftModal(), 1100);
+  }
+}
+function showBirthdayModal() {
+  const st = getState();
+  const name = st.user?.name || 'друг';
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet-layer top';
+  sheet.innerHTML = `
+    <div class="overlay"></div>
+    <div class="sheet" style="text-align:center; padding:28px 20px;">
+      <div class="sheet-handle"></div>
+      <div style="font-size:52px; margin-bottom:10px;">🎂✨</div>
+      <h2 style="font-family:var(--disp); font-size:20px; font-weight:800;">С днём рождения, ${esc(name)}!</h2>
+      <p style="font-size:14px; color:var(--mut); margin:8px 0 16px;">Reply дарит тебе дневной премиум и конфетти — пусть год будет тёплым!</p>
+      <div style="padding:8px 14px; border-radius:999px; background:rgba(251,191,36,.15); border:1px solid rgba(251,191,36,.3); color:#fbbf24; font-weight:800; display:inline-block; margin-bottom:16px;">🎁 Дневной премиум активирован</div>
+      <button class="btn btn-primary" id="bdClose">Спасибо! 🎉</button>
+    </div>`;
+  app.appendChild(sheet);
+  markBirthdayShown();
+  if (!st.premium) { st.premium = true; save(); }
+  if (isDailyGiftAvailable()) claimDailyGift();
+  confetti(app);
+  sound.tada();
+  $('.overlay', sheet).addEventListener('click', () => sheet.remove());
+  $('#bdClose', sheet).addEventListener('click', () => sheet.remove());
+}
+function showDailyGiftModal() {
+  if (!isDailyGiftAvailable()) return;
+  claimDailyGift();
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet-layer top';
+  sheet.innerHTML = `
+    <div class="overlay"></div>
+    <div class="sheet" style="text-align:center; padding:24px 20px;">
+      <div class="sheet-handle"></div>
+      <div style="font-size:44px; margin-bottom:10px;">🎁</div>
+      <h2 style="font-family:var(--disp); font-size:18px; font-weight:800;">Дневной подарок</h2>
+      <p style="font-size:13px; color:var(--mut); margin:6px 0 12px;">Заходи каждый день — огонёк растёт, как в Duolingo 🔥</p>
+      <div style="padding:8px 14px; border-radius:999px; background:rgba(251,146,60,.14); border:1px solid rgba(251,146,60,.25); color:#f59e0b; font-weight:800; display:inline-block; margin-bottom:14px;">+1 к стрику 🔥 ${getState().streak} дней</div>
+      <button class="btn btn-primary" id="dgClose">Забрать 🎉</button>
+    </div>`;
+  app.appendChild(sheet);
+  confetti(app);
+  sound.coin();
+  $('.overlay', sheet).addEventListener('click', () => sheet.remove());
+  $('#dgClose', sheet).addEventListener('click', () => sheet.remove());
 }
 
 // ─── SPLASH ─────────────────────────────────────────────────────────────────
@@ -783,6 +837,7 @@ function renderMain(opts = {}) {
   });
   const renders = { discover: tabDiscover, dates: tabDates, memories: tabMemories, collections: tabCollections, profile: tabProfile };
   (renders[tab] || tabDiscover)(tc);
+  if (tab === 'discover' || tab === 'profile') setTimeout(checkCelebrations, 800);
 }
 
 // ─── ТАБ: ЛЮДИ (свайпы) ─────────────────────────────────────────────────────
@@ -797,7 +852,7 @@ function tabDiscover(tc) {
     <header class="topbar">
       <div class="tb-logo">Reply<span class="tb-dot"></span></div>
       <div class="tb-right">
-        <span class="streak" title="Серия свиданий">🔥 ${st.streak}</span>
+        <span class="streak" title="Огонёк ${getFlame().level} ур.">${getFlame().icon} ${getFlame().streak}</span>
         <button class="tb-icon tb-surprise ${daily.claimed ? '' : 'pulse'}" id="btnSurprise" title="Сюрприз дня">🎁</button>
         <button class="tb-icon tb-filter ${hasFilter ? 'has-filter' : ''}" id="btnFilter" title="Фильтры">🎛️</button>
         <button class="tb-icon" data-act="settings" title="Настройки">⚙️</button>
@@ -1751,7 +1806,7 @@ function renderRecap({ charId }) {
 
 function tabDates(tc) {
   const st = getState();
-  let html = `<header class="topbar"><div class="tb-logo">Reply<span class="tb-dot"></span></div><div class="tb-right"><span class="streak">🔥 ${st.streak}</span></div></header>`;
+  let html = `<header class="topbar"><div class="tb-logo">Reply<span class="tb-dot"></span></div><div class="tb-right"><span class="streak" title="Огонёк ${getFlame().level} ур.">${getFlame().icon} ${getFlame().streak}</span></div></header>`;
 
   // ── запланированные свидания (их может быть несколько, но не в одно время)
   const plans = [...(st.planned || [])]
@@ -1828,7 +1883,7 @@ function tabDates(tc) {
 
 function tabMemories(tc) {
   const st = getState();
-  let html = `<header class="topbar"><div class="tb-logo">Reply<span class="tb-dot"></span></div><div class="tb-right"><span class="streak">🔥 ${st.streak}</span></div></header>
+  let html = `<header class="topbar"><div class="tb-logo">Reply<span class="tb-dot"></span></div><div class="tb-right"><span class="streak" title="Огонёк ${getFlame().level} ур.">${getFlame().icon} ${getFlame().streak}</span></div></header>
   <h2 class="page-title">📖 История</h2>`;
 
   // главы истории отношений: у каждого заметченного персонажа своя
@@ -1929,7 +1984,7 @@ function tabCollections(tc) {
 
   let html = `
     <header class="topbar"><div class="tb-logo">Reply<span class="tb-dot"></span></div>
-      <div class="tb-right"><span class="streak">🔥 ${st.streak}</span></div>
+      <div class="tb-right"><span class="streak" title="Огонёк ${getFlame().level} ур.">${getFlame().icon} ${getFlame().streak}</span></div>
     </header>
     <h2 class="page-title">🎁 Коллекции</h2>
     <div class="coll-summary">
@@ -1995,7 +2050,7 @@ function tabProfile(tc) {
   let html = `
     <header class="topbar"><div class="tb-logo">Reply<span class="tb-dot"></span></div>
       <div class="tb-right">
-        <span class="streak">🔥 ${st.streak}</span>
+        <span class="streak" title="Огонёк ${getFlame().level} ур.">${getFlame().icon} ${getFlame().streak}</span>
         <button class="tb-icon" data-act="settings2">⚙️</button>
       </div>
     </header>
@@ -2016,6 +2071,18 @@ function tabProfile(tc) {
           <div class="ps"><b>${achievements}</b><span>Наград</span></div>
           <div class="ps"><b>${st.streak}</b><span>Серия 🔥</span></div>
         </div>
+        ${(() => { const f = getFlame(); return `
+        <div class="flame-wrap" id="flameWrap" title="Нажми чтобы одеть огонёк">
+          <div class="flame-emoji">${f.icon}</div>
+          <div style="flex:1; text-align:left;">
+            <b>${f.streak ? `Огонёк ${f.level} ур. · ${f.streak} ${f.streak===1?'день':'дней'} подряд` : 'Огонёк спит · зайди завтра'}</b>
+            <small class="flame-level" style="display:block; color:var(--mut); font-size:11px;">Стиль: ${f.name} · нажми чтобы переодеть</small>
+          </div>
+          <span style="font-size:18px;">👗</span>
+        </div>
+        <div class="flame-outfits" id="flameOutfits" hidden>
+          ${Object.entries(FLAME_STYLES).map(([k,v]) => `<button class="flame-outfit ${f.outfit.name===v.name?'on':''}" data-style="${k}" title="${v.name}">${v.emoji}</button>`).join('')}
+        </div>`; })()}
         <div class="prof-card">
           <div class="pc-row" id="profMbtiRow" style="cursor:pointer;">
             <span>🧬</span>
@@ -2074,6 +2141,20 @@ function tabProfile(tc) {
   if (premBtn) premBtn.addEventListener('click', openPremium);
   tc.querySelector('[data-act="settings2"]').addEventListener('click', openSettings);
   tc.querySelector('[data-edit-profile="1"]')?.addEventListener('click', openEditProfile);
+  // огонёк — переодевание
+  $('#flameWrap', tc)?.addEventListener('click', () => {
+    const box = $('#flameOutfits', tc);
+    if (box) box.hidden = !box.hidden;
+    sound.pop();
+  });
+  $$('.flame-outfit', tc).forEach((b) => {
+    b.addEventListener('click', () => {
+      setFlameOutfit(b.dataset.style);
+      sound.pop();
+      toast(`Огонёк теперь ${FLAME_STYLES[b.dataset.style]?.name || b.dataset.style}`, FLAME_STYLES[b.dataset.style]?.emoji || '🔥');
+      tabProfile(tc);
+    });
+  });
 
   function compatTop() {
     if (!st.matched.length) return '—';
