@@ -995,7 +995,7 @@ img { display: block; max-width: 100%; }
 .prof-verify { color: #38bdf8; font-size: 17px; }
 .prof-city { text-align: center; color: var(--mut); font-size: 13px; }
 .prof-about { text-align: center; color: #d5cef0; font-size: 14px; margin-top: 8px; }
-.prof-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0 4px; }
+.prof-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0 4px; }
 .ps { background: var(--card); border: 1px solid var(--stroke); border-radius: 18px; padding: 12px 4px; text-align: center; display: flex; flex-direction: column; gap: 2px; }
 .ps b { font-size: 19px; font-family: var(--disp); }
 .ps span { font-size: 9.5px; color: var(--mut); font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
@@ -1602,6 +1602,19 @@ body.theme-light .msg.partner .msg-bubble {
   color: #fff;
   border-color: var(--stroke2);
 }
+
+/* ── фильтр возраста ───────────────────────────────────────────────────── */
+.flt-age-btn { width:34px; height:34px; border-radius:10px; background:var(--card2); border:1px solid var(--stroke); font-size:18px; display:grid; place-items:center; flex:0 0 auto; transition: all .15s; }
+.flt-age-btn:active { transform:scale(.88); background:var(--card); }
+
+/* ── огонёк-стрик (TikTok/Duolingo) ───────────────────────────────────── */
+.flame-wrap { display:flex; flex-direction:column; align-items:center; gap:8px; padding:16px; background: linear-gradient(160deg, rgba(251,146,60,.14), rgba(251,191,36,.10)); border:1px solid rgba(251,146,60,.22); border-radius:22px; margin:14px 0; }
+.flame-emoji { font-size:44px; filter: drop-shadow(0 6px 16px rgba(251,146,60,.45)); animation: flamePulse 2.2s ease-in-out infinite; }
+@keyframes flamePulse { 0%,100% { transform:scale(1); filter: drop-shadow(0 6px 16px rgba(251,146,60,.45)); } 50% { transform:scale(1.08); filter: drop-shadow(0 10px 24px rgba(251,146,60,.65)); } }
+.flame-level { font-size:12px; font-weight:800; color:#fbbf24; }
+.flame-outfits { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:4px; }
+.flame-outfit { width:42px; height:42px; border-radius:14px; background:var(--card); border:1.5px solid var(--stroke); font-size:20px; display:grid; place-items:center; transition: all .2s; }
+.flame-outfit.on { border-color:#f59e0b; background: rgba(251,191,36,.18); box-shadow:0 6px 16px rgba(251,146,60,.25); transform: translateY(-2px); }
 
 /* ── v1.2.7: воронка отмены Premium ─────────────────────────────────────── */
 .cf-emoji { font-size: 46px; margin-bottom: 6px; line-height: 1; }

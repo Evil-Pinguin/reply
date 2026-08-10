@@ -283,11 +283,28 @@ function openFiltersSheet(onApply) {
         ${CITIES.map((c) => `<button class="chip ${f.city === c ? 'on' : ''}" data-v="${c}">${c}</button>`).join('')}
       </div>
 
-      <p class="ob-label" style="margin-top:14px;">Возраст: <b id="fltAgeLabel">${f.minAge} – ${f.maxAge} лет</b></p>
-      <div style="display:flex; gap:10px; align-items:center; margin-top:4px;">
-        <input type="range" id="fltMinAge" min="18" max="35" value="${f.minAge}" style="flex:1;">
-        <input type="range" id="fltMaxAge" min="18" max="35" value="${f.maxAge}" style="flex:1;">
+      <p class="ob-label" style="margin-top:14px;">Возраст</p>
+      <div class="flt-age-box" style="display:flex; gap:12px; margin-top:8px;">
+        <div class="flt-age-col" style="flex:1; background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:12px; text-align:center;">
+          <div style="font-size:11px; color:var(--mut); font-weight:800; letter-spacing:.5px;">ОТ</div>
+          <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-top:6px;">
+            <button class="flt-age-btn" id="fltMinMinus">−</button>
+            <b id="fltMinVal" style="font-size:22px; min-width:32px;">${f.minAge}</b>
+            <button class="flt-age-btn" id="fltMinPlus">+</button>
+          </div>
+          <input type="range" id="fltMinAge" min="18" max="35" value="${f.minAge}" style="width:100%; margin-top:8px;">
+        </div>
+        <div class="flt-age-col" style="flex:1; background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:12px; text-align:center;">
+          <div style="font-size:11px; color:var(--mut); font-weight:800; letter-spacing:.5px;">ДО</div>
+          <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-top:6px;">
+            <button class="flt-age-btn" id="fltMaxMinus">−</button>
+            <b id="fltMaxVal" style="font-size:22px; min-width:32px;">${f.maxAge}</b>
+            <button class="flt-age-btn" id="fltMaxPlus">+</button>
+          </div>
+          <input type="range" id="fltMaxAge" min="18" max="35" value="${f.maxAge}" style="width:100%; margin-top:8px;">
+        </div>
       </div>
+      <div style="text-align:center; margin-top:8px; font-size:12px; color:var(--mut); font-weight:700;" id="fltAgeLabel">${f.minAge} – ${f.maxAge} лет</div>
 
       <div class="edit-actions" style="margin-top:20px;">
         <button class="btn btn-primary" id="fltApply">Применить</button>
@@ -320,12 +337,18 @@ function openFiltersSheet(onApply) {
   const updateAge = () => {
     let min = Number(minSlider.value);
     let max = Number(maxSlider.value);
-    if (min > max) { [min, max] = [max, min]; }
+    if (min > max) { [min, max] = [max, min]; minSlider.value = min; maxSlider.value = max; }
     f.minAge = min; f.maxAge = max;
     $('#fltAgeLabel', sheet).textContent = `${min} – ${max} лет`;
+    const mv = $('#fltMinVal', sheet); if (mv) mv.textContent = min;
+    const xv = $('#fltMaxVal', sheet); if (xv) xv.textContent = max;
   };
   minSlider.addEventListener('input', updateAge);
   maxSlider.addEventListener('input', updateAge);
+  $('#fltMinMinus', sheet)?.addEventListener('click', () => { minSlider.value = Math.max(18, Number(minSlider.value)-1); updateAge(); sound.pop(); });
+  $('#fltMinPlus', sheet)?.addEventListener('click', () => { minSlider.value = Math.min(35, Number(minSlider.value)+1); updateAge(); sound.pop(); });
+  $('#fltMaxMinus', sheet)?.addEventListener('click', () => { maxSlider.value = Math.max(18, Number(maxSlider.value)-1); updateAge(); sound.pop(); });
+  $('#fltMaxPlus', sheet)?.addEventListener('click', () => { maxSlider.value = Math.min(35, Number(maxSlider.value)+1); updateAge(); sound.pop(); });
 
   $('#fltApply', sheet).addEventListener('click', () => {
     setFilters(f);
@@ -378,7 +401,6 @@ function renderSplash() {
       <p class="splash-tag">Не чат.<br>Настоящее первое свидание.</p>
       <button class="btn btn-primary btn-lg splash-cta">Начать</button>
       <p class="splash-sub">Место, где переписка становится воспоминанием</p>
-      <a href="/api/download" class="splash-zip-link" download="reply-project.zip">💾 Скачать проект (ZIP)</a>
     </div>`;
   const btn = $('.splash-cta');
   setTimeout(() => btn.classList.add('ready'), 300);
@@ -777,7 +799,6 @@ function tabDiscover(tc) {
       <div class="tb-right">
         <span class="streak" title="Серия свиданий">🔥 ${st.streak}</span>
         <button class="tb-icon tb-surprise ${daily.claimed ? '' : 'pulse'}" id="btnSurprise" title="Сюрприз дня">🎁</button>
-        <button class="tb-icon" id="btnNight" title="Ночной режим">🌙</button>
         <button class="tb-icon tb-filter ${hasFilter ? 'has-filter' : ''}" id="btnFilter" title="Фильтры">🎛️</button>
         <button class="tb-icon" data-act="settings" title="Настройки">⚙️</button>
       </div>
@@ -797,7 +818,6 @@ function tabDiscover(tc) {
 
   $('[data-act="settings"]').addEventListener('click', openSettings);
   $('#btnSurprise').addEventListener('click', () => openDailySurprise(() => tabDiscover(tc)));
-  $('#btnNight').addEventListener('click', openGoodNightModal);
   $('#btnFilter').addEventListener('click', () => openFiltersSheet(() => tabDiscover(tc)));
 
   $('.da-pass').addEventListener('click', () => actOn('pass'));
@@ -1992,7 +2012,6 @@ function tabProfile(tc) {
         <p class="prof-city">📍 ${esc(u.city)} · ${esc(u.avatarLabel)}</p>
         <p class="prof-about">${esc(u.about || '')}</p>
         <div class="prof-stats">
-          <div class="ps"><b>${compatTop()}</b><span>Совместимость</span></div>
           <div class="ps"><b>${datesCount}</b><span>Свиданий</span></div>
           <div class="ps"><b>${achievements}</b><span>Наград</span></div>
           <div class="ps"><b>${st.streak}</b><span>Серия 🔥</span></div>
@@ -2040,10 +2059,6 @@ function tabProfile(tc) {
                 </div>
               </div>`;
           }).join('')}
-        </div>
-
-        <div style="margin-top:24px; text-align:center;">
-          <a href="/api/download" class="btn btn-outline" download="reply-project.zip" style="display:inline-flex; width:auto; padding:10px 20px;">💾 Скачать проект (ZIP)</a>
         </div>
       </div>
     </div>`;
@@ -2495,8 +2510,6 @@ function openSettings() {
       `}
 
       <div style="margin-top:16px; display:flex; flex-direction:column; gap:8px;">
-        <button class="btn btn-ghost" id="setNight">🌙 Пожелать доброй ночи</button>
-        <a href="/api/download" class="btn btn-outline" download="reply-project.zip" style="text-align:center;">💾 Скачать архив проекта (ZIP)</a>
         <button class="btn btn-ghost" id="setReset" style="color:var(--mut2);">Сбросить все данные</button>
       </div>
       <p class="prem-fine" style="text-align:center; margin-top:12px;">Reply v1.2.7 · полная версия · живой мир + ИИ Groq + сезоны + главы</p>
@@ -2534,11 +2547,6 @@ function openSettings() {
 
   $('#setCancelPrem', sheet)?.addEventListener('click', () => {
     openCancelFlow(() => { sheet.remove(); openSettings(); });
-  });
-
-  $('#setNight', sheet)?.addEventListener('click', () => {
-    sheet.remove();
-    openGoodNightModal();
   });
 
   $('#setReset', sheet).addEventListener('click', () => {
