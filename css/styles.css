@@ -330,7 +330,7 @@ img { display: block; max-width: 100%; }
 
 /* ── СВАЙПЫ ────────────────────────────────────────────────────────────── */
 .discover-wrap { position: relative; display: flex; flex-direction: column; height: 100%; }
-.deck-info { text-align: center; padding: 6px 20px 12px; }
+.deck-info { text-align: center; padding: 6px 20px 12px; position: relative; z-index: 5; }
 .deck-count { font-size: 14px; color: var(--mut); }
 .deck-count b { color: var(--rose); font-size: 16px; }
 .deck-dots { display: flex; gap: 5px; justify-content: center; margin-top: 8px; }
@@ -399,7 +399,10 @@ img { display: block; max-width: 100%; }
 .stamp-like { right: 22px; color: #4ade80; border-color: #4ade80; background: rgba(74, 222, 128, .12); text-shadow: 0 4px 18px rgba(74, 222, 128, .5); }
 .stamp-pass { left: 22px; color: #f87171; border-color: #f87171; background: rgba(248, 113, 113, .12); }
 
-.deck-actions { display: flex; justify-content: center; gap: 22px; padding: 20px 0 14px; align-items: center; }
+.deck-actions { display: flex; justify-content: center; gap: 22px; padding: 20px 0 14px; align-items: center; position: relative; z-index: 10; }
+.discover-wrap { position: relative; }
+.deck { position: relative; z-index: 1; }
+.deck-actions .da-btn { position: relative; z-index: 11; }
 .da-btn {
   width: 62px; height: 62px;
   border-radius: 50%;

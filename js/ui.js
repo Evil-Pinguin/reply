@@ -476,7 +476,7 @@ function renderOnboarding() {
   
   // загрузка черновика из localStorage
   let draft = {
-    name: '', gender: 'male', targetGender: 'all', birthday: '2000-05-15', age: 24, city: 'Москва',
+    name: '', gender: 'male', targetGender: 'all', birthday: '2000-05-15', age: 24, city: '',
     avatarEmoji: '', avatarLabel: '', avatarImg: '', avatarHue: 0,
     mbti: '', values: [], habits: [],
     about: '', interests: [], goals: '',
@@ -2118,13 +2118,22 @@ function tabProfile(tc) {
           <div class="ps"><b>${st.streak}</b><span>Серия 🔥</span></div>
         </div>
         ${(() => { const f = getFlame(); return `
-        <div class="flame-wrap" id="flameWrap" title="Нажми чтобы одеть огонёк">
-          <div class="flame-emoji">${f.icon}</div>
-          <div style="flex:1; text-align:left;">
-            <b>${f.streak ? `Огонёк ${f.level} ур. · ${f.streak} ${f.streak===1?'день':'дней'} подряд` : 'Огонёк спит · зайди завтра'}</b>
-            <small class="flame-level" style="display:block; color:var(--mut); font-size:11px;">Стиль: ${f.name} · нажми чтобы переодеть</small>
+                <div class="flame-wrap" id="flameWrap" title="Нажми чтобы одеть огонёк" style="cursor:pointer; display:flex; flex-direction:column; gap:10px; padding:16px; background:linear-gradient(160deg, rgba(251,146,60,.14), rgba(251,191,36,.10)); border:1px solid rgba(251,146,60,.22); border-radius:22px; margin:14px 0; align-items:center; text-align:center;">
+          <div style="display:flex; align-items:center; gap:12px; width:100%; justify-content:center; flex-wrap:wrap;">
+            <div class="flame-emoji" style="font-size:36px; filter: drop-shadow(0 6px 16px rgba(251,146,60,.45)); animation: flamePulse 2.2s ease-in-out infinite;">${f.icon}</div>
+            <div style="flex:1; text-align:center; min-width:180px;">
+              <b style="font-size:14px;">${f.levelIcon} ${f.levelName} · ${f.level} ур. · ${f.streak} ${f.streak===1?'день':'дней'} подряд</b>
+              <small class="flame-level" style="display:block; color:var(--mut); font-size:11px; margin-top:2px;">Стиль: ${f.name} · ${f.desc} · 👗 переодеть</small>
+            </div>
+            <span style="font-size:18px;">👗</span>
           </div>
-          <span style="font-size:18px;">👗</span>
+          <div style="display:flex; align-items:center; gap:10px; width:100%; max-width:320px;">
+            <div style="flex:1; height:8px; background:rgba(255,255,255,.08); border-radius:999px; overflow:hidden;">
+              <div style="height:100%; width:${barW}; background:linear-gradient(90deg, ${f.outfit.color || '#f59e0b'}, #fbbf24); border-radius:999px; transition:width .8s ease;"></div>
+            </div>
+            <small style="font-size:10.5px; font-weight:800; color:${f.outfit.color || '#f59e0b'};">${f.progress}%</small>
+          </div>
+          <small style="font-size:11px; color:var(--mut); text-align:center;">${f.nextThreshold ? `До <b style="color:var(--txt);">${f.nextName}</b>: ${f.toNext} дн. — ${f.levelDef.reward}` : `${f.levelDef.reward}`}</small>
         </div>
         <div class="flame-outfits" id="flameOutfits" hidden>
           ${Object.entries(FLAME_STYLES).map(([k,v]) => `<button class="flame-outfit ${f.outfit.name===v.name?'on':''}" data-style="${k}" title="${v.name}">${v.emoji}</button>`).join('')}
@@ -2132,11 +2141,26 @@ function tabProfile(tc) {
         <div class="prof-card">
           <div class="pc-row" id="profMbtiRow" style="cursor:pointer;">
             <span>🧬</span>
-            <div><b>${u.mbti || 'ENFP'} · ${esc(mbtiInf.name)}</b><small>Тип личности (MBTI) — нажми для деталей</small></div>
+            <div style="flex:1;"><b>${u.mbti || 'ENFP'} · ${esc(mbtiInf.name)}</b><small>Тип личности (MBTI) — нажми для деталей</small></div>
+            <button class="btn btn-ghost-sm" id="profMbtiDetail" style="font-size:11px; padding:6px 10px; border-radius:999px;">Подробнее ℹ️</button>
           </div>
           <div class="pc-row"><span>🎯</span><div><b>${esc(u.goals || 'Серьёзные отношения')}</b><small>Цель знакомства</small></div></div>
           <div class="pc-row"><span>💎</span><div><b>${(u.values || []).join(', ') || 'Честность, Свобода'}</b><small>Ценности</small></div></div>
           <div class="pc-row"><span>🌿</span><div><b>${(u.habits || []).join(', ') || 'Кофе по утрам'}</b><small>Привычки</small></div></div>
+        </div>
+
+        <div class="mbti-more" style="margin:14px 0; padding:12px; background:var(--card); border:1px solid var(--stroke); border-radius:18px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+            <b style="font-size:13px;">🧬 Другие типы личности</b>
+            <small style="color:var(--mut); font-size:11px;">нажми чтобы прочитать</small>
+          </div>
+          <div class="mbti-grid" id="profMbtiGrid" style="grid-template-columns: repeat(4, 1fr); gap:6px;">
+            ${Object.keys(MBTI_INFO).map(t=>{
+              const inf=MBTI_INFO[t];
+              const sel=t===(u.mbti||'ENFP');
+              return `<button class="mbti-card ${sel?'sel':''}" data-mbti="${t}" style="padding:8px 4px; font-size:11px; ${sel?'border-color:#ff5e7e;':''}"><span class="mbti-code" style="font-size:11px;">${t}</span><span style="font-size:9px; color:var(--mut);">${inf.name.slice(0,8)}</span></button>`;
+            }).join('')}
+          </div>
         </div>
 
         <h3 class="sec-title">Интересы</h3>
@@ -2146,17 +2170,17 @@ function tabProfile(tc) {
         <div class="gallery-grid">${st.gallery.length ? st.gallery.map((g) => `<img src="${g.dataUrl}" alt="">`).join('') : '<div class="empty-note">Совместные фото появятся здесь после свиданий 📸</div>'}</div>
 
         ${st.premium ? `
-          <div class="premium-badge-row" style="margin-top:14px;">
-            <div class="premium-badge">👑 Reply Premium активна</div>
-            ${st.premiumDiscount ? '<div style="font-size:12px; color:#fde68a; margin-top:4px;">🎁 ваша скидка 50% навсегда применена</div>' : ''}
+          <div class="premium-badge-row" style="margin-top:14px; text-align:center; display:flex; flex-direction:column; align-items:center;">
+            <div class="premium-badge" style="margin:0 auto;">👑 Reply Premium активна</div>
+            ${st.premiumDiscount ? '<div style="font-size:12px; color:#fde68a; margin-top:4px; text-align:center;">🎁 ваша скидка 50% навсегда применена</div>' : ''}
             <button class="btn btn-ghost-sm" id="profCancelPrem" style="margin-top:8px;">Отменить Premium</button>
           </div>
         ` : `
-          <div class="prem-card">
-            <div class="prem-emoji">👑</div>
-            <b>Reply Premium</b>
-            <p>Безлимитные свидания, эксклюзивные локации, совместный просмотр фильмов и многое другое.</p>
-            <button class="btn btn-gold" data-prem="1">Открыть Premium</button>
+          <div class="prem-card" style="align-items:center; text-align:center; justify-content:center;">
+            <div class="prem-emoji" style="font-size:36px;">👑</div>
+            <b style="text-align:center;">Reply Premium</b>
+            <p style="text-align:center;">Безлимитные свидания, эксклюзивные локации, совместный просмотр фильмов и многое другое.</p>
+            <button class="btn btn-gold" data-prem="1" style="margin:0 auto;">Открыть Premium</button>
           </div>`}
 
         <h3 class="sec-title" style="margin-top:20px;">🏆 Достижения (${achievements} из ${_ACH.length})</h3>
@@ -2179,6 +2203,13 @@ function tabProfile(tc) {
   tc.innerHTML = html;
   
   $('#profMbtiRow', tc)?.addEventListener('click', () => openMbtiModal(u.mbti || 'ENFP'));
+  $('#profMbtiDetail', tc)?.addEventListener('click', (e) => { e.stopPropagation(); openMbtiModal(u.mbti || 'ENFP'); });
+  $$('#profMbtiGrid .mbti-card', tc).forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const t=b.dataset.mbti;
+      if(t) openMbtiModal(t);
+    });
+  });
   $('#profCancelPrem', tc)?.addEventListener('click', () => {
     openCancelFlow(() => tabProfile(tc));
   });
