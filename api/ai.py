@@ -132,7 +132,7 @@ def handle_ai(payload):
         req_body['model'] = model
         req = urllib.request.Request(
             GROQ_URL, data=json.dumps(req_body).encode('utf-8'),
-            headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {key}'},
+            headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {key}', 'User-Agent': 'Reply/1.3.4 (https://github.com/Evil-Pinguin/reply; contact@reply.app)'},
             method='POST',
         )
         try:
