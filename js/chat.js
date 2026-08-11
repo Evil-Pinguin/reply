@@ -142,16 +142,17 @@ export class ChatBrain {
     this.game = null;
     this.person = character.personality;
     this.rel = relationOf(character.id);
-    this.memoryUsed = false;
-    this.memory = [];          // память разговора {role,text,topics,kw}
-    this.history = [];         // полный диалог {role:'user'|'assistant', text} для внешнего ИИ
-    this.usedActivities = new Set(); // активности, уже предложенные/запущенные
-    this.season = getSeason();       // текущий сезон живого мира
-    this.chapter = chapterFor(character.id); // глава истории отношений
-    this.aiQuiet = false;      // после сбоя внешнего ИИ не долбим сервер
-    this.aiQuietAt = 0;        // время последней неудачной попытки (ретрай раз в 2 мин)
+    this.memory = [];
+    this.history = [];
+    this.usedActivities = new Set();
+    this.season = getSeason();
+    this.chapter = chapterFor(character.id);
+    this.aiQuiet = false;
+    this.aiQuietAt = 0;
     this.dead = false;
-    this._usedIdx = {};        // чтобы не повторять фразы подряд
+    this._usedIdx = {};
+    this.evaluations = []; // v1.3.3: помнит что было хорошо/плохо/странно/ужасно
+    this.momentsLog = []; // логи действий: заказ, цветок и тд
   }
 
   _addStat(k, v) {
@@ -169,7 +170,6 @@ export class ChatBrain {
 
   _say(text, opts = {}) {
     if (this.dead) return;
-    // ведём полный диалог для внешнего ИИ (системные заметки не записываем)
     if (opts.record !== false) {
       this.history.push({ role: 'assistant', text });
       if (this.history.length > 40) this.history = this.history.slice(-40);
@@ -178,9 +178,6 @@ export class ChatBrain {
     this.onPartnerSays(text, { ...opts, delay });
   }
 
-  // ── внешний ИИ (Groq) с тихим фолбэком ────────────────────────────────────
-  // после неудачи «затихаем», но раз в ~2 минуты пробуем снова:
-  // если ключ добавили/эндпоинт ожил — ИИ подхватывается без перезагрузки
   async _tryAI(text) {
     if (!aiEnabled()) return null;
     if (this.aiQuiet && Date.now() - this.aiQuietAt < 120000) return null;
@@ -192,6 +189,10 @@ export class ChatBrain {
       user: this.user,
       history: this.history,
       text,
+      stats: this.stats,
+      topics: Array.from(this.topics),
+      evaluations: this.evaluations.slice(-8),
+      moments: this.momentsLog.slice(-8),
     });
     if (reply) {
       this.aiQuiet = false;
@@ -199,7 +200,7 @@ export class ChatBrain {
       return reply;
     }
     this.aiQuiet = true;
-    this.aiQuietAt = Date.now(); // ключа нет или сервер недоступен — локальный мозг
+    this.aiQuietAt = Date.now();
     return null;
   }
 
@@ -214,6 +215,10 @@ export class ChatBrain {
       user: this.user,
       history: this.history,
       initiative: true,
+      stats: this.stats,
+      topics: Array.from(this.topics),
+      evaluations: this.evaluations.slice(-8),
+      moments: this.momentsLog.slice(-8),
     });
     if (reply) {
       this.aiQuiet = false;
@@ -233,7 +238,6 @@ export class ChatBrain {
     return text;
   }
 
-  // выбор без повторов подряд
   _pickNoRepeat(pool, key) {
     if (!pool.length) return '';
     const last = this._usedIdx[key] ?? -1;
@@ -243,7 +247,6 @@ export class ChatBrain {
     return pool[i];
   }
 
-  // ── детектор шифра / бессмысленного ввода
   _isGibberish(text, a) {
     const t = text.trim().toLowerCase();
     if (t.length < 2) return false;
@@ -260,105 +263,37 @@ export class ChatBrain {
     return false;
   }
 
-  // ── анализ и композиция ответа v1.3.3: коротко и связно ────────────────
-  _compose(a, text) {
+  // оценка сообщения: хорошо/плохо/странно/ужасно — чтобы ИИ помнил
+  _evaluate(text, a) {
+    const t = text.toLowerCase();
+    let type = null;
+    let note = '';
     if (this._isGibberish(text, a)) {
-      return this._pickNoRepeat([
-        'Ой, не разобрал — напишешь ещё раз словами? 😊',
-        'Похоже клавиатура убежала — повтори, пожалуйста?',
-        'Т9 шалит? Напиши ещё раз, я внимательно слушаю',
-      ], 'gib');
+      type = 'strange';
+      note = 'Пользователь написал что-то непонятное/шифр';
+    } else if (/(ужасно|кошмар|отвратительно|ужас|ненавижу)/i.test(t)) {
+      type = 'terrible';
+      note = 'Пользователь считает что-то ужасным';
+    } else if (a.negative) {
+      type = 'bad';
+      note = 'Пользователь расстроен или ему что-то не понравилось';
+    } else if (/(странно|чудно|необычно|подозрительно)/i.test(t)) {
+      type = 'strange';
+      note = 'Пользователь считает что-то странным';
+    } else if (a.positive || /(спасибо|классно|круто|отлично|здорово|кайф|супер)/i.test(t)) {
+      type = 'good';
+      note = 'Пользователь доволен, ему что-то понравилось';
     }
-    const views = this.char.views || {};
-    const top = a.topics[0];
-
-    // 1. основной контент — один взгляд по теме, без нагромождения
-    let content = null;
-    if (top && views[top.id]) {
-      content = this._pickNoRepeat(views[top.id], 'view-' + top.id);
-      this.topics.add(top.id);
-    } else if (top && BOT.topics[top.id]) {
-      content = pick(BOT.topics[top.id]);
-    } else if (top && GENERIC_TOPIC[top.id]) {
-      content = this._pickNoRepeat(GENERIC_TOPIC[top.id], 'gen-' + top.id);
-    } else {
-      // нет темы — иногда дать один случайный взгляд, не всегда
-      if (chance(0.25)) {
-        const allViews = Object.values(views).flat();
-        if (allViews.length) content = this._pickNoRepeat(allViews, 'view-rand');
-      }
+    if (type) {
+      this.evaluations.push({ type, note, text: text.slice(0,120), ts: Date.now() });
+      if (this.evaluations.length > 20) this.evaluations.shift();
+      this.momentsLog.push({ kind: 'eval', type, text: text.slice(0,80) });
+      if (this.momentsLog.length > 20) this.momentsLog.shift();
     }
-
-    // 2. если контента нет — используем короткие нейтральные фразы
-    if (!content) {
-      if (a.negative) {
-        content = this._pickNoRepeat(OPENER_NEG, 'op-neg');
-        this._addStat('trust', 1);
-      } else if (a.isQuestion) {
-        content = this._pickNoRepeat(OPENER_Q, 'op-q');
-      } else {
-        content = this._pickNoRepeat(OPENER_NEUTRAL, 'op-n');
-      }
-    }
-
-    // 3. иногда (5%) добавить сезон/главу, но только если нет темы погоды и как отдельное предложение
-    let extra = null;
-    if (!top && chance(0.05)) {
-      extra = this._pickNoRepeat([seasonLine(), chapterLine(this.char.id).line], 'extra-'+this.char.id);
-    }
-
-    // 4. вопрос в ответ — только один, и только если уместно
-    let follow = null;
-    if (a.isQuestion || chance(this.person.talk * 0.45)) {
-      if (top) {
-        const fu = chance(0.6) ? pick(FOLLOWUPS_TOPIC) : pick(FOLLOWUPS_GENERIC);
-        const line = fu(top.nom);
-        if (line && !/null|undefined/.test(line)) follow = line;
-      } else {
-        follow = pick(FOLLOWUPS_GENERIC)();
-      }
-    }
-
-    // 5. собираем 1-2 предложения максимум, связно
-    let parts = [];
-    if (content) parts.push(content);
-    if (extra && chance(0.5) && parts.length < 2) parts.push(extra);
-    if (follow && parts.length < 2) {
-      // если уже есть контент, добавляем follow как второе предложение
-      parts.push(follow);
-    }
-
-    let reply = parts.filter(Boolean).join(' ').trim();
-    // защита от дублирования одинаковых фраз
-    reply = reply.replace(/\s+/g, ' ').trim();
-    // финальная чистка от null
-    if (!reply || /null|undefined/i.test(reply)) {
-      reply = this._pickNoRepeat(OPENER_NEUTRAL, 'op-n');
-    }
-    // ограничим длину — максимум 2 коротких предложения
-    const sentences = reply.split(/(?<=[.!?])\s+/);
-    if (sentences.length > 2) reply = sentences.slice(0,2).join(' ');
-    return reply;
+    return type;
   }
 
-  _remember(a) {
-    // отослать к памяти разговора: «кстати, ты говорил(а) про X»
-    const currentIds = a.topics.map((t) => t.id);
-    const prev = this.memory.find((m) => m.role === 'user' && m.topics.length && !currentIds.includes(m.topics[0].id));
-    if (prev && chance(0.3)) {
-      const nom = prev.topics[0].nom;
-      const lines = [
-        `Кстати, ты раньше говорил(а) про ${nom} — я всё думал(а) об этом`,
-        `Помнишь, ты упоминал(а) ${nom}? Мне захотелось вернуться к этой теме`,
-        `А помнишь, мы говорили про ${nom}? Я потом ещё размышлял(а)`,
-      ];
-      this._say(this._emojiLine(pick(lines)), { emote: 'think', emoji: '💭' });
-      this._addStat('comfort', 1);
-      return true;
-    }
-    return false;
-  }
-
+  // v1.3.3: только ИИ, без шаблонного локального мозга
   async userSaid(raw) {
     const text = raw.trim();
     if (!text) return;
@@ -366,185 +301,26 @@ export class ChatBrain {
     this._addStat('comfort', 1);
 
     const a = analyze(text);
+    this._evaluate(text, a);
     this.memory.push({ role: 'user', text, topics: a.topics, kw: a.keywords });
     if (this.memory.length > 24) this.memory.shift();
     this.history.push({ role: 'user', text });
     if (this.history.length > 40) this.history = this.history.slice(-40);
+    if (a.topics.length) a.topics.forEach(t=>this.topics.add(t.id));
 
-    // ── v1.2.8: гибридный мозг — сначала пробуем Groq, затем локальный ──
-    // попытка внешнего ИИ (если включен)
-    let aiReply = await this._tryAI(text);
-    if (aiReply !== null) {
-      this._say(this._emojiLine(aiReply), { emote: a.negative ? 'shy' : a.positive ? 'happy' : a.isQuestion ? 'think' : 'happy', ai: true });
-      this._scheduleSecond(a);
-      if (chance(0.18)) this._remember(a);
-      return;
+    // только Groq, без шаблона (по просьбе)
+    const reply = await this._tryAI(text);
+    if (reply) {
+      this._say(this._emojiLine(reply), { emote: a.negative ? 'shy' : a.positive ? 'happy' : a.isQuestion ? 'think' : 'happy', ai: true });
+    } else {
+      this._say('🤖 Groq сейчас недоступен в превью Arena (сеть закрыта). Локально: GROQ_API_KEY=... python3 server.py → http://localhost:8080 — там живой Llama 3.3. Он помнит что было хорошо/плохо/странно/ужасно.', { emote: 'think', emoji: '🤖', kind: 'system' });
     }
-
-    // ── локальный мозг (работает в превью Arena, без сети к Groq) ──
-    // интент-специфичные ответы — живые, без шаблонного «null»
-    const lower = text.toLowerCase();
-    let local = null;
-    let emote = a.negative ? 'shy' : a.positive ? 'happy' : a.isQuestion ? 'think' : 'happy';
-
-    // как зовут — отвечаем именем персонажа
-    if (INTENT_RE.name.test(lower)) {
-      const name = this.char.name || 'я';
-      local = this._pickNoRepeat([
-        `Меня зовут ${name} 😊 А тебя как?`,
-        `Я — ${name}. Приятно познакомиться!`,
-        `${name} — так меня зовут. А как к тебе обращаться?`,
-      ], 'loc-name');
-      emote = 'happy';
-      this._addStat('trust', 1);
-    }
-    // если упомянуто имя персонажа в сообщении — откликаемся
-    else if (lower.includes(this.char.name.toLowerCase())) {
-      local = this._pickNoRepeat([
-        `Да, это я — ${this.char.name} 😊 Ты меня звал(а)?`,
-        `Ага, ${this.char.name} на связи! Что хотел(а) сказать?`,
-        `Услышал(а) своё имя — сразу улыбнулся(лась)`,
-      ], 'loc-mention');
-      emote = 'happy';
-      this._addStat('sympathy', 1);
-    }
-    // приветствия
-    else if (INTENT_RE.greet.test(lower)) {
-      const g = this._pickNoRepeat([
-        'Привет! Я уже тут и улыбаюсь, увидев тебя 😊',
-        'Привееет! Как же я рада, что ты написал(а)',
-        'Хай! Мы будто только начали, а уже так тепло',
-        'Здравствуй! Сижу, жду твоего сообщения — и вот оно',
-      ], 'loc-greet');
-      local = g + (a.positive ? ' Какое у тебя настроение сегодня?' : '');
-      emote = 'happy';
-      this._addStat('comfort', 1);
-    }
-    // как дела
-    else if (INTENT_RE.howareyou.test(lower)) {
-      const v = this.char.views ? Object.values(this.char.views).flat() : [];
-      const moodLine = v.length ? this._pickNoRepeat(v, 'loc-how') : this._pickNoRepeat([
-        'У меня сегодня такой уютный вечер — и ты его делаешь лучше',
-        'Чуть волнуюсь, но рядом с тобой спокойно',
-        'Настроение — как наш плейлист: тёплое и чуть задумчивое',
-      ], 'loc-how');
-      local = moodLine + ' А ты как? Как твой день прошёл?';
-      emote = 'think';
-      this._addStat('trust', 1);
-    }
-    // комплименты
-    else if (INTENT_RE.compliment.test(lower)) {
-      local = this._pickNoRepeat(BOT.reactions.compliment || [
-        'Спасибо… ты меня смущаешь 😳 Это очень приятно',
-        'Ой, я покраснел(а). Говори ещё, я записываю',
-        'Ты умеешь говорить так, что хочется улыбаться всю ночь',
-      ], 'loc-comp');
-      emote = 'blush';
-      this._addStat('romance', 2);
-      this._addStat('sympathy', 1);
-    }
-    // спасибо
-    else if (INTENT_RE.thanks.test(lower)) {
-      local = this._pickNoRepeat([
-        'Тебе спасибо — мне приятно делиться этим с тобой',
-        'Всегда пожалуйста. Мне правда важно то, что ты говоришь',
-        'Спасибо, что ты рядом. Это больше, чем слова',
-      ], 'loc-thx');
-      emote = 'happy';
-      this._addStat('trust', 1);
-    }
-    // извинения
-    else if (INTENT_RE.sorry.test(lower)) {
-      local = this._pickNoRepeat(BOT.reactions.sorry || [
-        'Всё в порядке, не переживай 😊',
-        'Даже не думай об этом — ты же со мной честен',
-        'Мы все иногда говорим невпопад. Главное, что мы говорим',
-      ], 'loc-sorry') + ' Давай просто продолжим?';
-      emote = 'shy';
-      this._addStat('trust', 1);
-    }
-    // любовь / флирт
-    else if (INTENT_RE.love.test(lower)) {
-      local = this._pickNoRepeat([
-        'Ты… это серьёзно? У меня сейчас сердце громче музыки',
-        'Ого. Это самое смелое, что я слышал(а) сегодня — и самое приятное',
-        'Я… не ожидал(а). Но если честно — мне это очень приятно ❤️',
-      ], 'loc-love');
-      emote = 'love';
-      this._addStat('romance', 3);
-      this._addStat('trust', 2);
-    }
-    else if (INTENT_RE.flirt.test(lower)) {
-      local = this._pickNoRepeat([
-        'Ты умеешь заставить покраснеть одним сообщением 😳',
-        'Скучал(а)? Я тоже — даже когда мы просто молчим рядом',
-        'Обнимемся мысленно? Я уже представляю, как это тепло',
-      ], 'loc-flirt');
-      emote = 'blush';
-      this._addStat('romance', 2);
-    }
-    // шутки
-    else if (INTENT_RE.joke.test(lower)) {
-      local = this._pickNoRepeat(BOT.reactions.joke || [
-        'Ахах, я чуть не рассмеялась в голос тут, за столиком 😂',
-        'Твои шутки опасны — я теперь улыбаюсь без причины',
-        'Окей, это официально смешно. Заношу в цитаты',
-      ], 'loc-joke');
-      emote = 'laugh';
-      this._addStat('humor', 2);
-    }
-    // прощание
-    else if (INTENT_RE.bye.test(lower)) {
-      local = this._pickNoRepeat([
-        'Уже уходишь? Мне было так хорошо, что время пролетело',
-        'Пока… Спасибо за этот вечер. Он точно останется в памяти',
-        'До встречи! Я буду думать о нашем разговоре',
-      ], 'loc-bye');
-      emote = 'happy';
-      this._addStat('comfort', 1);
-    }
-
-    if (!local) {
-      local = this._compose(a, text);
-    }
-
-    // финальная защита от «null» / «undefined» в тексте
-    if (!local || /null|undefined/i.test(local)) {
-      local = this._pickNoRepeat([
-        'Мне правда интересно то, что ты рассказываешь — продолжи?',
-        'Слушай, а расскажи подробнее? Я внимательно слушаю',
-        'Звучит так, будто за этим есть история. Расскажешь?',
-      ], 'loc-fallback');
-    }
-
-    this._say(this._emojiLine(local), { emote, emoji: a.positive ? '✨' : a.negative ? '💭' : '' });
-    this._scheduleSecond(a);
-    if (chance(0.22)) this._remember(a);
-  }
-
-  // вторая короткая реплика — как живой человек, который дописывает
-  _scheduleSecond(a) {
-    if (!chance(this.person.talk * 0.3)) return;
-    setTimeout(() => {
-      const pool = [
-        'Ну и ещё… ты мне нравишься, если что',
-        'Кстати, а ты уже выбрал(а), что будешь заказывать?',
-        'Мне нравится, как мы разговариваем',
-        'Я, наверное, скажу глупость, но мне хорошо',
-        'А знаешь, что я подумал(а)? Это лучший вечер за неделю',
-        'Не обращай внимания, я просто размышляю вслух',
-        'Слушай, а ты когда-нибудь загадывал(а) желания на закате?',
-      ];
-      this._say(this._emojiLine(pick(pool)), { emote: 'think', emoji: '💭' });
-      this._addStat('comfort', 1);
-    }, this._delay('') + 2600 + Math.random() * 2500);
   }
 
   _lastDateMemo() {
     return 'ты заказывал(а) ' + pick(['тирамису', 'капучино', 'что-то невероятно вкусное']) + ' в ' + pick(['нашем месте', 'том ресторане']) + '?';
   }
 
-  // ── события свидания ──────────────────────────────────────────────────────
   start() {
     setTimeout(() => {
       const greets = [
@@ -581,8 +357,6 @@ export class ChatBrain {
     };
     evLoop();
 
-    // инициативы персонажа: партнёр сам пишет, предлагает активности,
-    // вспоминает прошлое, говорит о сезоне и главе истории
     const initLoop = () => {
       const t = setTimeout(() => {
         this._initiative();
@@ -594,7 +368,6 @@ export class ChatBrain {
   }
 
   _initiative() {
-    // не перебиваем активный диалог слишком часто
     if (this.msgCount < 2) return;
     if (this._lastInit && Date.now() - this._lastInit < 30000) return;
     this._lastInit = Date.now();
@@ -611,9 +384,6 @@ export class ChatBrain {
     const kind = pick(kinds);
 
     const emote = kind === 'memory' ? 'think' : kind === 'chapter' ? 'love' : 'happy';
-
-    // внешний ИИ может написать инициативу сам (кроме предложений активности:
-    // у них есть интерактивная кнопка в чате)
     const aiPromise = kind === 'proposal' ? Promise.resolve(null) : this._tryAIInitiative();
     aiPromise.then((aiLine) => {
       if (this.dead) return;
@@ -622,7 +392,6 @@ export class ChatBrain {
         this._addStat('comfort', 1);
         return;
       }
-      // локальные инициативы
       if (kind === 'proposal') {
         const id = pick(availActs);
         const act = ACTS.get(id);
@@ -640,8 +409,6 @@ export class ChatBrain {
         const pool = [
           'Помнишь наше прошлое свидание? Я до сих пор вспоминаю, как мы смеялись',
           'Когда вспоминаю, как мы встретились… до сих пор мурашки',
-          'Я рассказывал(а) друзьям про наше первое свидание. Они сказали, что мы слишком милые 😄',
-          'А помнишь, что ты тогда рассказывал(а)? Я запомнил(а) навсегда',
         ];
         this._say(this._emojiLine(pick(pool)), { emote: 'think', emoji: '💭' });
         this._addStat('trust', 1);
@@ -658,22 +425,21 @@ export class ChatBrain {
         this._addStat('romance', 1);
         return;
       }
-      // spontaneous
       const pool = [
         'Я сейчас поймал(а) себя на мысли, что мне хорошо. Просто хорошо, без причин',
         'Слушай, а ты веришь в знаки? Вот наша встреча — точно знак',
-        'У меня есть вопрос, но я стесняюсь… Ладно, потом',
         'Знаешь, что я понял(а)? С тобой даже молчать — приятно',
-        'А хочешь, потом устроим ещё одно свидание? Я уже придумал(а), куда',
       ];
       this._say(this._emojiLine(pick(pool)), { emote: this.person.shy > 0.3 ? 'blush' : 'happy' });
       this._addStat('comfort', 1);
     });
   }
 
-  // ── активности ────────────────────────────────────────────────────────────
   trigger(id) {
     this.usedActivities.add(id);
+    // логируем как хорошее действие для памяти ИИ
+    this.evaluations.push({ type: 'good', note: `Пользователь выбрал активность ${id}`, text: id, ts: Date.now() });
+    this.momentsLog.push({ kind: 'activity', id, type: 'good' });
     switch (id) {
       case 'coffee': case 'dessert': {
         const item = this.loc.menu.find((m) => (id === 'coffee' ? /кофе|латте|капучино|матча|американо|шоколад/i.test(m.name) : /десерт|торт|пирог|тирамису|чизкейк|сорбет|дайфуку|печенье/i.test(m.name))) || this.loc.menu[1];
@@ -767,9 +533,11 @@ export class ChatBrain {
     this.quiz = null;
     if (ok) {
       this._addStat('humor', 2); this._addStat('sympathy', 1);
+      this.evaluations.push({ type: 'good', note: 'Пользователь правильно ответил в викторине', text: q.q.slice(0,60), ts: Date.now() });
       this._say('Вау, верно! Ты гений. Я впечатлён(а) 🏆', { emote: 'happy' });
     } else {
       this._addStat('humor', 1);
+      this.evaluations.push({ type: 'bad', note: 'Пользователь ошибся в викторине', text: q.q.slice(0,60), ts: Date.now() });
       this._say(`Ахах, почти! Правильный ответ: ${q.a[q.ok]} 😄`, { emote: 'laugh' });
     }
     return { type: 'quizResult', ok };
@@ -793,16 +561,16 @@ export class ChatBrain {
     this.game.round++;
     if (win) this.game.wins++;
     let reply;
-    if (win) { this._addStat('humor', 2); reply = 'Ого, ты выиграл(а)! Ладно, справедливо 😤'; }
+    if (win) { this._addStat('humor', 2); reply = 'Ого, ты выиграл(а)! Ладно, справедливо 😤'; this.evaluations.push({ type: 'good', note: 'Пользователь выиграл в игре', ts: Date.now() }); }
     else if (draw) { this._addStat('humor', 1); reply = 'Ничья! Значит, мы одинаковые'; }
-    else { this._addStat('humor', 2); reply = 'Ха! Моя победа. Следующий раунд за мной 😎'; }
+    else { this._addStat('humor', 2); reply = 'Ха! Моя победа. Следующий раунд за мной 😎'; this.evaluations.push({ type: 'bad', note: 'Пользователь проиграл в игре', ts: Date.now() }); }
     const finished = this.game.round >= 3;
     const res = { type: 'gameResult', partnerMove, win, draw, finished, finalWin: this.game.wins >= 2 };
     this.game = finished ? null : this.game;
     setTimeout(() => {
       this._say(reply, { emote: win ? 'happy' : 'laugh' });
       if (finished) {
-        setTimeout(() => this._say(finalWin ? 'Итог: победа за мной! Но ты играл(а) красиво' : 'Ладно, твоя взяла. Я поддамся в следующий раз 😄', { emote: 'happy' }), 1600);
+        setTimeout(() => this._say(this.game?.wins>=2 ? 'Итог: победа за мной! Но ты играл(а) красиво' : 'Ладно, твоя взяла. Я поддамся в следующий раз 😄', { emote: 'happy' }), 1600);
       }
     }, 900);
     return res;
@@ -817,18 +585,18 @@ export class ChatBrain {
   orderFood(item) {
     this._addStat('comfort', 1);
     this._addStat('sympathy', 0.5);
+    this.evaluations.push({ type: 'good', note: `Заказ: ${item.name}`, text: item.name, ts: Date.now() });
+    this.momentsLog.push({ kind: 'order', name: item.name, type: 'good' });
     this._say(pick([
       'Ого, отличный выбор! 😍',
       'Ммм, это выглядит божественно',
       'Ты угадал(а) мои мысли!',
-      'Я как раз на это смотрел(а)!',
-      'Заказывай! Я поделюсь, если поделишься ты 😄',
-      'Мне кажется, это будет вкусно. Особенно если есть вдвоём',
     ]), { emote: 'happy', emoji: '😋' });
   }
 
   photoDone() {
     this._addStat('sympathy', 2); this._addStat('romance', 1);
+    this.evaluations.push({ type: 'good', note: 'Совместное фото сделано', ts: Date.now() });
     this._say('Смотри, какой кадр! Это теперь наша история 📸', { emote: 'love', emoji: '📸' });
   }
 
@@ -847,7 +615,8 @@ export class ChatBrain {
   }
 }
 
-// ─── Панель чата ────────────────────────────────────────────────────────────
+
+// ─── Панель чата ─// ─── Панель чата ────────────────────────────────────────────────────────────
 
 export class ChatPanel {
   constructor(container, { scene, brain, character, onSend, onMenu, onActivity, onExpand, onFinish, onVoice, onPropose }) {

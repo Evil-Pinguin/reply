@@ -77,6 +77,10 @@ def build_system_prompt(data):
     chapter = data.get('chapter')
     user = data.get('user') or {}
     p = ch.get('personality') or {}
+    stats = data.get('stats') or {}
+    topics = data.get('topics') or []
+    evaluations = data.get('evaluations') or []
+    moments = data.get('moments') or []
 
     def num(v, default=0.5):
         try:
@@ -90,7 +94,8 @@ def build_system_prompt(data):
                  'Отвечай ОТ ПЕРВОГО ЛИЦА, полностью в образе, по-русски. '
                  'Живо, тепло, естественно, как живой человек на свидании: 1–3 коротких предложения, '
                  'можно лёгкая ирония, изредка одно уместное эмодзи. Не выходи из образа, не объясняй, '
-                 'что ты ИИ, не пиши вступлений вроде «Я понимаю» — сразу реплику.')
+                 'что ты ИИ, не пиши вступлений вроде «Я понимаю» — сразу реплику. '
+                 'ВАЖНО: помни что происходило на свидании — что было хорошо, плохо, странно, ужасно — и реагируй соответственно, как живой человек который запоминает.')
     if loc:
         lines.append(f'Место свидания: {loc.get("name")} {loc.get("emoji", "")} (атмосфера: {loc.get("music") or "уютная"}).')
     if season:
@@ -117,6 +122,42 @@ def build_system_prompt(data):
     interests = ch.get('interests') or []
     if interests:
         lines.append(f'Твои интересы: {", ".join(str(i) for i in interests[:8])}.')
+    # статистика отношений — чтобы помнить что было
+    if stats:
+        try:
+            trust = int(stats.get('trust',0))
+            comfort = int(stats.get('comfort',0))
+            humor = int(stats.get('humor',0))
+            sympathy = int(stats.get('sympathy',0))
+            romance = int(stats.get('romance',0))
+            lines.append(f'Отношения сейчас: доверие {trust}, комфорт {comfort}, юмор {humor}, симпатия {sympathy}, романтика {romance}. '
+                         f'Если доверие/комфорт низкие — значит что-то пошло плохо, поддержи. Если высокие — было хорошо.')
+        except Exception:
+            pass
+    if topics:
+        lines.append(f'Темы которые уже обсуждали: {", ".join(str(t) for t in topics[:6])}. Не повторяй одно и то же.')
+    # память о хорошем/плохом/странном/ужасном — ключевая просьба пользователя
+    if evaluations:
+        goods = [e for e in evaluations if e.get('type')=='good'][-3:]
+        bads = [e for e in evaluations if e.get('type')=='bad'][-3:]
+        stranges = [e for e in evaluations if e.get('type')=='strange'][-3:]
+        terribles = [e for e in evaluations if e.get('type')=='terrible'][-3:]
+        if goods:
+            lines.append('Что было ХОРОШО (запомни и иногда вернись, похвали): ' + '; '.join(f"{g.get('note','')}: {g.get('text','')[:60]}" for g in goods))
+        if bads:
+            lines.append('Что было ПЛОХО (запомни, извини или поддержи если нужно): ' + '; '.join(f"{b.get('note','')}: {b.get('text','')[:60]}" for b in bads))
+        if stranges:
+            lines.append('Что было СТРАННО (запомни, можешь уточнить с юмором): ' + '; '.join(f"{s.get('note','')}: {s.get('text','')[:60]}" for s in stranges))
+        if terribles:
+            lines.append('Что было УЖАСНО (важно запомнить, отреагируй с эмпатией и поддержкой): ' + '; '.join(f"{t.get('note','')}: {t.get('text','')[:60]}" for t in terribles))
+    if moments:
+        # моменты типа заказ, активность
+        acts = [m for m in moments if m.get('kind') in ('order','activity') or m.get('type')=='good'][-4:]
+        if acts:
+            flat_m = ', '.join(str(m.get('name') or m.get('id') or m.get('kind') or '')[:30] for m in acts)
+            if flat_m:
+                lines.append(f'Недавние действия на свидании (запомни): {flat_m}.')
+    lines.append('Отвечай связно, не повторяй одинаковые фразы, не склеивай 4 мысли в одну. Одно живое сообщение = 1-2 предложения.')
     return '\n'.join(lines)
 
 

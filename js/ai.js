@@ -124,6 +124,10 @@ function compactPayload(p) {
     })),
     text: String(p.text || '').slice(0, 300),
     initiative: !!p.initiative,
+    stats: p.stats || null,
+    topics: (p.topics || []).slice(-6),
+    evaluations: (p.evaluations || []).slice(-6).map(e=>({type:e.type, note:String(e.note||'').slice(0,80), text:String(e.text||'').slice(0,80)})),
+    moments: (p.moments || []).slice(-6),
   };
 }
 
@@ -157,7 +161,8 @@ async function getAI(payload) {
 }
 
 // основной вызов: возвращает реплику персонажа или null при любой ошибке
-export async function askAI({ character, location, season, chapter, user, history, text, initiative }) {
+// v1.3.3: помнит что было хорошо/плохо/странно/ужасно через evaluations/moments/stats
+export async function askAI({ character, location, season, chapter, user, history, text, initiative, stats, topics, evaluations, moments }) {
   if (!aiEnabled()) return null;
   if (isLatched()) return null; // эндпоинт уже проверен и недоступен
 
@@ -170,6 +175,10 @@ export async function askAI({ character, location, season, chapter, user, histor
     history: (history || []).slice(-16),
     text,
     initiative: !!initiative,
+    stats: stats || null,
+    topics: topics || [],
+    evaluations: evaluations || [],
+    moments: moments || [],
   };
 
   let reply = await postAI(payload);

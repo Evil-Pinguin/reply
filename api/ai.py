@@ -31,6 +31,10 @@ def build_system_prompt(data):
     chapter = data.get('chapter')
     user = data.get('user') or {}
     p = ch.get('personality') or {}
+    stats = data.get('stats') or {}
+    topics = data.get('topics') or []
+    evaluations = data.get('evaluations') or []
+    moments = data.get('moments') or []
 
     def num(v, default=0.5):
         try:
@@ -44,33 +48,53 @@ def build_system_prompt(data):
                  'Отвечай ОТ ПЕРВОГО ЛИЦА, полностью в образе, по-русски. '
                  'Живо, тепло, естественно, как живой человек на свидании: 1–3 коротких предложения, '
                  'можно лёгкая ирония, изредка одно уместное эмодзи. Не выходи из образа, не объясняй, '
-                 'что ты ИИ, не пиши вступлений вроде «Я понимаю» — сразу реплику.')
+                 'что ты ИИ, не пиши вступлений вроде «Я понимаю» — сразу реплику. '
+                 'ВАЖНО: помни что происходило — что было хорошо, плохо, странно, ужасно — и реагируй как живой человек.')
     if loc:
         lines.append(f'Место свидания: {loc.get("name")} {loc.get("emoji", "")} (атмосфера: {loc.get("music") or "уютная"}).')
     if season:
         lines.append(f'Сейчас время года: {season.get("name")} {season.get("emoji", "")}.')
     if chapter:
-        lines.append(f'Ваша история находится в главе «{chapter.get("name")} {chapter.get("emoji", "")}» — веди себя соответственно (начало знакомства / тепло / доверие / близость).')
+        lines.append(f'Ваша история находится в главе «{chapter.get("name")} {chapter.get("emoji", "")}» — веди себя соответственно.')
     if user and user.get('name'):
-        lines.append(f'Твой собеседник: {user["name"]}{", " + str(user["age"]) + " лет" if user.get("age") else ""}. Обращайся к нему(ней) по имени не слишком часто.')
+        lines.append(f'Твой собеседник: {user["name"]}{", " + str(user["age"]) + " лет" if user.get("age") else ""}.')
     if p:
-        lines.append(f'Характер: разговорчивость {num(p.get("talk"))}, юмор {num(p.get("humor"))}, '
-                     f'застенчивость {num(p.get("shy"))}, глубина {num(p.get("deep"))}, '
-                     f'эмодзи-активность {num(p.get("emoji"))}.')
+        lines.append(f'Характер: разговорчивость {num(p.get("talk"))}, юмор {num(p.get("humor"))}, застенчивость {num(p.get("shy"))}, глубина {num(p.get("deep"))}.')
     extra = ' '.join(filter(None, [ch.get('commStyle'), ch.get('temperament'), ch.get('mood')]))
     if extra:
-        lines.append(f'Стиль и темперамент: {extra}.')
+        lines.append(f'Стиль: {extra}.')
     views = ch.get('views') or {}
     if views:
         flat = ' '.join(v for arr in views.values() for v in (arr if isinstance(arr, list) else [arr]))
         if flat:
-            lines.append(f'Твои личные взгляды (используй как источник живых деталей): {flat[:1200]}.')
-    catches = ch.get('catchphrases') or []
-    if catches:
-        lines.append(f'Твои коронные фразы, иногда вплетай похожие: {"; ".join(str(c) for c in catches[:6])}.')
-    interests = ch.get('interests') or []
-    if interests:
-        lines.append(f'Твои интересы: {", ".join(str(i) for i in interests[:8])}.')
+            lines.append(f'Взгляды: {flat[:1200]}.')
+    if stats:
+        try:
+            lines.append(f'Отношения: доверие {int(stats.get("trust",0))}, комфорт {int(stats.get("comfort",0))}, юмор {int(stats.get("humor",0))}, симпатия {int(stats.get("sympathy",0))}, романтика {int(stats.get("romance",0))}.')
+        except Exception:
+            pass
+    if topics:
+        lines.append(f'Темы: {", ".join(str(t) for t in topics[:6])}.')
+    if evaluations:
+        goods = [e for e in evaluations if e.get('type')=='good'][-3:]
+        bads = [e for e in evaluations if e.get('type')=='bad'][-3:]
+        stranges = [e for e in evaluations if e.get('type')=='strange'][-3:]
+        terribles = [e for e in evaluations if e.get('type')=='terrible'][-3:]
+        if goods:
+            lines.append('ХОРОШО: ' + '; '.join(f"{g.get('note','')}: {g.get('text','')[:60]}" for g in goods))
+        if bads:
+            lines.append('ПЛОХО: ' + '; '.join(f"{b.get('note','')}: {b.get('text','')[:60]}" for b in bads))
+        if stranges:
+            lines.append('СТРАННО: ' + '; '.join(f"{s.get('note','')}: {s.get('text','')[:60]}" for s in stranges))
+        if terribles:
+            lines.append('УЖАСНО: ' + '; '.join(f"{t.get('note','')}: {t.get('text','')[:60]}" for t in terribles))
+    if moments:
+        acts = [m for m in moments if m.get('kind') in ('order','activity') or m.get('type')=='good'][-4:]
+        if acts:
+            flat_m = ', '.join(str(m.get('name') or m.get('id') or m.get('kind') or '')[:30] for m in acts)
+            if flat_m:
+                lines.append(f'Действия: {flat_m}.')
+    lines.append('Отвечай связно, 1-2 предложения, без повторов и склеек.')
     return '\n'.join(lines)
 
 
