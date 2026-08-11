@@ -12,7 +12,8 @@ import {
   addGallery, unlock, relationOf, compatibilityWith, togglePremium, setPremium, cancelPremium, resetAll,
   refreshDeck, save, collect, setChapter, collectionCount,
   getTheme, setTheme, applyTheme, getFilters, setFilters, getDailySurprise, claimDailySurprise,
-  getFlame, setFlameOutfit, FLAME_STYLES, isBirthdayToday, shouldShowBirthday, markBirthdayShown, isDailyGiftAvailable, claimDailyGift,
+  getFlame, setFlameOutfit, FLAME_STYLES, FLAME_LEVELS, isBirthdayToday, shouldShowBirthday, markBirthdayShown, isDailyGiftAvailable, claimDailyGift,
+  getLikesRemaining, getLikesUsed, canLike,
 } from './state.js';
 import { sound } from './audio.js';
 import { floatEmoji, burstHearts, confetti } from './effects.js';
@@ -41,11 +42,30 @@ function clearScreen() {
 }
 
 export function init(root) {
-  app = root;
-  attachDelegated(root);
-  const st = getState();
-  if (!st.onboarded) return show('splash');
-  return show('main');
+  try {
+    app = root;
+    try { attachDelegated(root); } catch(e){ console.error('attachDelegated',e); }
+    let st;
+    try { st = getState(); } catch(e){ console.error('getState',e); st={onboarded:false}; }
+    if (!st || !st.onboarded) return show('splash');
+    return show('main');
+  } catch(e){
+    console.error('init outer',e);
+    // emergency fallback - directly render minimal splash
+    try {
+      const r = root || document.getElementById('app');
+      if (r) {
+        r.innerHTML = `
+          <div class="screen splash">
+            <div class="logo-bubble">💬</div>
+            <h1 class="logo-text">Reply</h1>
+            <p class="splash-tag">Не чат.<br>Настоящее первое свидание.</p>
+            <div class="spinner" style="margin:16px auto;"></div>
+            <button class="btn btn-primary btn-lg" onclick="try{localStorage.clear();}catch(e){} location.reload();">Перезапустить</button>
+          </div>`;
+      }
+    } catch(e2){}
+  }
 }
 
 // Глобальное делегирование кликов: capture-фаза + pointerup + fallback по координатам.
@@ -140,20 +160,37 @@ function attachDelegated(root) {
 }
 
 export function show(name, opts = {}) {
-  clearScreen();
-  app.style.display = 'block';
-  sound.click();
-  const renders = {
-    splash: renderSplash,
-    onboarding: renderOnboarding,
-    main: renderMain,
-    planner: renderPlanner,
-    waiting: renderWaiting,
-    date: renderDate,
-    recap: renderRecap,
-    premium: renderPremium,
-  };
-  (renders[name] || renderMain)(opts);
+  try {
+    clearScreen();
+    if (app && app.style) app.style.display = 'block';
+    try { sound.click(); } catch(e){}
+    const renders = {
+      splash: renderSplash,
+      onboarding: renderOnboarding,
+      main: renderMain,
+      planner: renderPlanner,
+      waiting: renderWaiting,
+      date: renderDate,
+      recap: renderRecap,
+      premium: renderPremium,
+    };
+    (renders[name] || renderMain)(opts);
+  } catch(e){
+    console.error('show failed', name, e);
+    try {
+      const r = app || document.getElementById('app');
+      if (r) {
+        r.innerHTML = `
+          <div class="screen splash">
+            <div class="logo-bubble">💬</div>
+            <h1 class="logo-text">Reply</h1>
+            <p class="splash-sub">Ошибка загрузки: ${String(e?.message||e).slice(0,120)}</p>
+            <div class="spinner" style="margin:16px auto;"></div>
+            <button class="btn btn-primary" onclick="location.reload()">Обновить</button>
+          </div>`;
+      }
+    } catch(e2){}
+  }
 }
 
 // ─── Тост и достижения ──────────────────────────────────────────────────────
@@ -204,48 +241,85 @@ function checkCelebrations() {
     setTimeout(() => showDailyGiftModal(), 1100);
   }
 }
+// v1.2.8: огонёк + ДР полностью доделаны — конфетти, прогресс, уровни, переодевания
 function showBirthdayModal() {
   const st = getState();
   const name = st.user?.name || 'друг';
+  const flame = getFlame();
   const sheet = document.createElement('div');
   sheet.className = 'sheet-layer top';
   sheet.innerHTML = `
     <div class="overlay"></div>
     <div class="sheet" style="text-align:center; padding:28px 20px;">
       <div class="sheet-handle"></div>
-      <div style="font-size:52px; margin-bottom:10px;">🎂✨</div>
+      <div style="font-size:56px; margin-bottom:10px; animation: flamePulse 2s ease-in-out infinite;">🎂${flame.icon}✨</div>
       <h2 style="font-family:var(--disp); font-size:20px; font-weight:800;">С днём рождения, ${esc(name)}!</h2>
-      <p style="font-size:14px; color:var(--mut); margin:8px 0 16px;">Reply дарит тебе дневной премиум и конфетти — пусть год будет тёплым!</p>
-      <div style="padding:8px 14px; border-radius:999px; background:rgba(251,191,36,.15); border:1px solid rgba(251,191,36,.3); color:#fbbf24; font-weight:800; display:inline-block; margin-bottom:16px;">🎁 Дневной премиум активирован</div>
-      <button class="btn btn-primary" id="bdClose">Спасибо! 🎉</button>
+      <p style="font-size:14px; color:var(--mut); margin:8px 0 14px; line-height:1.5;">Reply дарит тебе дневной премиум, усиленный огонёк и конфетти — пусть год будет тёплым и ярким!</p>
+      <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-bottom:14px;">
+        <span style="padding:8px 14px; border-radius:999px; background:rgba(251,191,36,.15); border:1px solid rgba(251,191,36,.3); color:#fbbf24; font-weight:800;">🎁 Премиум на день</span>
+        <span style="padding:8px 14px; border-radius:999px; background:rgba(251,146,60,.15); border:1px solid rgba(251,146,60,.3); color:#f59e0b; font-weight:800;">${flame.icon} ${flame.levelName} · ${flame.streak} дней</span>
+      </div>
+      <div style="padding:10px 14px; border-radius:14px; background:var(--card); border:1px solid var(--stroke); font-size:12.5px; color:var(--mut); margin-bottom:16px;">
+        ✨ Совет: зайди завтра — огонёк вырастет до <b style="color:var(--txt);">${flame.nextName || 'Легенды 👑'}</b> быстрее, если не пропускать дни!
+      </div>
+      <button class="btn btn-primary" id="bdClose">Спасибо! 🎉 Задуть свечи</button>
     </div>`;
   app.appendChild(sheet);
   markBirthdayShown();
   if (!st.premium) { st.premium = true; save(); }
-  if (isDailyGiftAvailable()) claimDailyGift();
+  if (isDailyGiftAvailable()) {
+    const res = claimDailyGift();
+    if (res && res.leveled) {
+      setTimeout(() => toast(`Огонёк вырос до ${res.nowLevel} уровня!`, getFlame().icon), 800);
+    }
+  }
   confetti(app);
+  // двойное конфетти для ДР
+  setTimeout(() => confetti(app), 600);
   sound.tada();
   $('.overlay', sheet).addEventListener('click', () => sheet.remove());
-  $('#bdClose', sheet).addEventListener('click', () => sheet.remove());
+  $('#bdClose', sheet).addEventListener('click', () => {
+    sheet.remove();
+    burstHearts(app);
+    sound.tada();
+  });
 }
 function showDailyGiftModal() {
   if (!isDailyGiftAvailable()) return;
-  claimDailyGift();
+  const prev = getState().streak || 0;
+  const res = claimDailyGift();
+  if (!res || !res.ok) return;
+  const flame = getFlame();
+  const leveledUp = res.leveled;
   const sheet = document.createElement('div');
   sheet.className = 'sheet-layer top';
   sheet.innerHTML = `
     <div class="overlay"></div>
     <div class="sheet" style="text-align:center; padding:24px 20px;">
       <div class="sheet-handle"></div>
-      <div style="font-size:44px; margin-bottom:10px;">🎁</div>
-      <h2 style="font-family:var(--disp); font-size:18px; font-weight:800;">Дневной подарок</h2>
-      <p style="font-size:13px; color:var(--mut); margin:6px 0 12px;">Заходи каждый день — огонёк растёт, как в Duolingo 🔥</p>
-      <div style="padding:8px 14px; border-radius:999px; background:rgba(251,146,60,.14); border:1px solid rgba(251,146,60,.25); color:#f59e0b; font-weight:800; display:inline-block; margin-bottom:14px;">+1 к стрику 🔥 ${getState().streak} дней</div>
-      <button class="btn btn-primary" id="dgClose">Забрать 🎉</button>
+      <div style="font-size:48px; margin-bottom:8px; animation: flamePulse 2s ease-in-out infinite;">${leveledUp ? '🎉' : '🎁'} ${flame.icon}</div>
+      <h2 style="font-family:var(--disp); font-size:18px; font-weight:800;">${leveledUp ? 'Новый уровень огонька!' : 'Дневной подарок'}</h2>
+      <p style="font-size:13px; color:var(--mut); margin:6px 0 12px; line-height:1.45;">${leveledUp ? `Ты вырос с ${res.prevLevel} до ${res.nowLevel} уровня — ${flame.levelName}!` : 'Заходи каждый день — огонёк растёт, как в Duolingo 🔥'}</p>
+      <div style="padding:10px 14px; border-radius:999px; background:rgba(251,146,60,.14); border:1px solid rgba(251,146,60,.25); color:#f59e0b; font-weight:800; display:inline-block; margin-bottom:10px;">
+        ${flame.levelIcon} ${flame.levelName} · ${flame.streak} ${flame.streak===1?'день':'дней'} · ур. ${flame.level}
+      </div>
+      <div class="flame-bar" style="height:8px; background:rgba(255,255,255,.08); border-radius:999px; overflow:hidden; margin:0 auto 12px; max-width:220px;">
+        <div style="height:100%; width:${flame.progress}%; background:linear-gradient(90deg,#f59e0b,#fbbf24); transition:width .8s ease;"></div>
+      </div>
+      <div style="font-size:11.5px; color:var(--mut); margin-bottom:14px;">
+        ${flame.nextThreshold ? `До ${flame.nextName || 'след. уровня'}: <b style="color:var(--txt);">${flame.toNext} дн.</b> — ${flame.desc}` : flame.desc}
+      </div>
+      <button class="btn btn-primary" id="dgClose">${leveledUp ? 'Вау! Продолжить 🚀' : 'Забрать 🎉'}</button>
     </div>`;
   app.appendChild(sheet);
-  confetti(app);
-  sound.coin();
+  if (leveledUp) {
+    confetti(app);
+    setTimeout(() => burstHearts(sheet), 400);
+    sound.tada();
+  } else {
+    confetti(app);
+    sound.coin();
+  }
   $('.overlay', sheet).addEventListener('click', () => sheet.remove());
   $('#dgClose', sheet).addEventListener('click', () => sheet.remove());
 }
@@ -346,7 +420,7 @@ function openFiltersSheet(onApply) {
             <b id="fltMinVal" style="font-size:22px; min-width:32px;">${f.minAge}</b>
             <button class="flt-age-btn" id="fltMinPlus">+</button>
           </div>
-          <input type="range" id="fltMinAge" min="18" max="35" value="${f.minAge}" style="width:100%; margin-top:8px;">
+          <input type="range" id="fltMinAge" min="18" max="60" value="${f.minAge}" style="width:100%; margin-top:8px;">
         </div>
         <div class="flt-age-col" style="flex:1; background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:12px; text-align:center;">
           <div style="font-size:11px; color:var(--mut); font-weight:800; letter-spacing:.5px;">ДО</div>
@@ -355,7 +429,7 @@ function openFiltersSheet(onApply) {
             <b id="fltMaxVal" style="font-size:22px; min-width:32px;">${f.maxAge}</b>
             <button class="flt-age-btn" id="fltMaxPlus">+</button>
           </div>
-          <input type="range" id="fltMaxAge" min="18" max="35" value="${f.maxAge}" style="width:100%; margin-top:8px;">
+          <input type="range" id="fltMaxAge" min="18" max="60" value="${f.maxAge}" style="width:100%; margin-top:8px;">
         </div>
       </div>
       <div style="text-align:center; margin-top:8px; font-size:12px; color:var(--mut); font-weight:700;" id="fltAgeLabel">${f.minAge} – ${f.maxAge} лет</div>
@@ -400,9 +474,9 @@ function openFiltersSheet(onApply) {
   minSlider.addEventListener('input', updateAge);
   maxSlider.addEventListener('input', updateAge);
   $('#fltMinMinus', sheet)?.addEventListener('click', () => { minSlider.value = Math.max(18, Number(minSlider.value)-1); updateAge(); sound.pop(); });
-  $('#fltMinPlus', sheet)?.addEventListener('click', () => { minSlider.value = Math.min(35, Number(minSlider.value)+1); updateAge(); sound.pop(); });
+  $('#fltMinPlus', sheet)?.addEventListener('click', () => { minSlider.value = Math.min(60, Number(minSlider.value)+1); updateAge(); sound.pop(); });
   $('#fltMaxMinus', sheet)?.addEventListener('click', () => { maxSlider.value = Math.max(18, Number(maxSlider.value)-1); updateAge(); sound.pop(); });
-  $('#fltMaxPlus', sheet)?.addEventListener('click', () => { maxSlider.value = Math.min(35, Number(maxSlider.value)+1); updateAge(); sound.pop(); });
+  $('#fltMaxPlus', sheet)?.addEventListener('click', () => { maxSlider.value = Math.min(60, Number(maxSlider.value)+1); updateAge(); sound.pop(); });
 
   $('#fltApply', sheet).addEventListener('click', () => {
     setFilters(f);
@@ -413,7 +487,7 @@ function openFiltersSheet(onApply) {
   });
 
   $('#fltReset', sheet).addEventListener('click', () => {
-    const def = { gender: 'all', city: 'all', minAge: 18, maxAge: 35 };
+    const def = { gender: 'all', city: 'all', minAge: 18, maxAge: 60 };
     setFilters(def);
     sound.pop();
     toast('Фильтры сброшены', '🔄');
@@ -447,37 +521,81 @@ function openGoodNightModal() {
 }
 
 function renderSplash() {
+  let cur = 'dark';
+  try { cur = getTheme(); } catch(e) { cur = 'dark'; }
+  try {
   app.innerHTML = `
     <div class="screen splash">
       <div class="splash-glow"></div>
       <div class="logo-bubble">💬</div>
       <h1 class="logo-text">Reply</h1>
       <p class="splash-tag">Не чат.<br>Настоящее первое свидание.</p>
-      <button class="btn btn-primary btn-lg splash-cta">Начать</button>
+      <div class="spinner" style="margin:16px auto;"></div>
+      <div style="display:flex; gap:8px; justify-content:center; margin:12px 0 4px; flex-wrap:wrap;" id="splashTheme">
+        <button class="theme-btn ${cur==='dark' ? 'sel' : ''}" data-t="dark">🌙 Тёмная</button>
+        <button class="theme-btn ${cur==='light' ? 'sel' : ''}" data-t="light">☀️ Светлая</button>
+        <button class="theme-btn ${cur==='auto' ? 'sel' : ''}" data-t="auto">⚙️ Авто</button>
+      </div>
+      <button class="btn btn-primary btn-lg splash-cta ready">Начать</button>
       <p class="splash-sub">Место, где переписка становится воспоминанием</p>
+      <p style="font-size:11px; color:var(--mut); margin-top:8px;">v1.3.2 · крутится — значит живёт ✨</p>
     </div>`;
   const btn = $('.splash-cta');
-  setTimeout(() => btn.classList.add('ready'), 300);
-  btn.addEventListener('click', () => {
-    sound.like();
-    const st = getState();
-    if (st.onboarded) show('main');
-    else show('onboarding');
-  });
+  try { setTimeout(() => { const b=$('.splash-cta'); if(b) b.classList.add('ready'); }, 100); } catch(e){}
+  try {
+    const themeBtns = $$('#splashTheme button');
+    themeBtns.forEach(b=>{
+      b.addEventListener('click', ()=>{
+        themeBtns.forEach(x=>x.classList.remove('sel'));
+        b.classList.add('sel');
+        try { setTheme(b.dataset.t); } catch(e){}
+        try { sound.pop(); } catch(e){}
+      });
+    });
+  } catch(e){}
+  try {
+    btn?.addEventListener('click', () => {
+      try { sound.like(); } catch(e){}
+      let st;
+      try { st = getState(); } catch(e){ st={onboarded:false}; }
+      if (st.onboarded) show('main');
+      else show('onboarding');
+    });
+  } catch(e){
+    app.addEventListener('click', ()=>{
+      let st;
+      try { st = getState(); } catch(e){ st={onboarded:false}; }
+      if (st.onboarded) show('main');
+      else show('onboarding');
+    }, {once:true});
+  }
+  } catch(e){
+    console.error('renderSplash failed', e);
+    try {
+      app.innerHTML = `
+        <div class="screen splash">
+          <div class="logo-bubble">💬</div>
+          <h1 class="logo-text">Reply</h1>
+          <p class="splash-tag">Не чат.<br>Настоящее первое свидание.</p>
+          <div class="spinner" style="margin:16px auto;"></div>
+          <button class="btn btn-primary btn-lg splash-cta ready" onclick="try{show('onboarding')}catch(e){location.reload()}">Начать</button>
+        </div>`;
+    } catch(e2){}
+  }
 }
 
 // ─── ОНБОРДИНГ ──────────────────────────────────────────────────────────────
 
 function renderOnboarding() {
-  const steps = 5;
+  const steps = 6; // v1.2.9: +1 шаг темы в самом начале
   let step = 0;
   
-  // загрузка черновика из localStorage
+  // загрузка черновика из localStorage — v1.2.9: без предвыбора, чисто с нуля
   let draft = {
     name: '', gender: 'male', targetGender: 'all', birthday: '2000-05-15', age: 24, city: 'Москва',
-    avatarEmoji: '😊', avatarLabel: 'Тёплый', avatarImg: 'assets/avatars/user-1.png', avatarHue: 0,
-    mbti: 'ENFP', values: ['Честность', 'Свобода'], habits: ['Кофе по утрам'],
-    about: '', interests: ['Кофе', 'Музыка'], goals: 'Серьёзные отношения',
+    avatarEmoji: '', avatarLabel: '', avatarImg: '', avatarHue: 0,
+    mbti: '', values: [], habits: [],
+    about: '', interests: [], goals: '',
   };
   try {
     const raw = localStorage.getItem('reply_onboarding_draft');
@@ -510,6 +628,39 @@ function renderOnboarding() {
   };
 
   const stepsFn = [
+    // 0 — тема оформления (в самом начале, по просьбе)
+    () => {
+      const curTheme = getTheme();
+      body.innerHTML = `
+        <div class="ob-step">
+          <div class="ob-emoji big">🎨</div>
+          <h2>Выбери свой вайб</h2>
+          <p class="ob-sub">Тёмная, светлая или авто — поменяй в любой момент, но давай сразу под твой вкус</p>
+          <div class="theme-selector" id="obTheme" style="margin-top:12px;">
+            <button class="theme-btn ${curTheme==='dark' ? 'sel' : ''}" data-t="dark">🌙 Тёмная</button>
+            <button class="theme-btn ${curTheme==='light' ? 'sel' : ''}" data-t="light">☀️ Светлая</button>
+            <button class="theme-btn ${curTheme==='auto' ? 'sel' : ''}" data-t="auto">⚙️ Авто</button>
+          </div>
+          <div style="margin-top:16px; padding:12px 14px; border-radius:14px; background:var(--card); border:1px solid var(--stroke); font-size:12.5px; color:var(--mut);">
+            💡 Тему можно всегда поменять в ⚙️ Настройках. Сейчас выбери то, что приятнее глазу.
+          </div>
+          <div style="margin-top:18px; display:flex; gap:8px; justify-content:center;">
+            <span style="width:36px; height:36px; border-radius:12px; background:linear-gradient(135deg,#0a0c18,#141730); border:1px solid rgba(255,255,255,.1); display:grid; place-items:center;">🌙</span>
+            <span style="width:36px; height:36px; border-radius:12px; background:#f4f5f9; border:1px solid rgba(0,0,0,.1); display:grid; place-items:center;">☀️</span>
+            <span style="width:36px; height:36px; border-radius:12px; background:linear-gradient(135deg,#8b5cf6,#ec4899); display:grid; place-items:center;">🎨</span>
+          </div>
+        </div>`;
+      $$('#obTheme button', body).forEach((b)=>{
+        b.addEventListener('click', ()=>{
+          $$('#obTheme button', body).forEach(x=>x.classList.remove('sel'));
+          b.classList.add('sel');
+          setTheme(b.dataset.t);
+          sound.pop();
+          nextBtn.disabled=false;
+        });
+      });
+      nextBtn.disabled=false;
+    },
     // 1 — знакомство
     () => {
       body.innerHTML = `
@@ -756,7 +907,7 @@ function renderOnboarding() {
     () => {
       body.innerHTML = `
         <div class="ob-step">
-          <div class="ob-avatar-final"><img src="${draft.avatarImg}" alt="" style="${draft.avatarHue ? `filter:hue-rotate(${draft.avatarHue}deg)` : ''}"></div>
+          <div class="ob-avatar-final">${draft.avatarImg ? `<img src="${draft.avatarImg}" alt="" style="${draft.avatarHue ? `filter:hue-rotate(${draft.avatarHue}deg)` : ''}">` : `<span style="font-size:52px;">${draft.avatarEmoji || '😊'}</span>`}</div>
           <h2>Добро пожаловать, ${esc(draft.name)}!</h2>
           <p class="ob-sub">Ваш профиль готов. Пора открывать тёплые встречи в Reply!</p>
           <div class="ob-summary">
@@ -838,6 +989,23 @@ function renderMain(opts = {}) {
   const renders = { discover: tabDiscover, dates: tabDates, memories: tabMemories, collections: tabCollections, profile: tabProfile };
   (renders[tab] || tabDiscover)(tc);
   if (tab === 'discover' || tab === 'profile') setTimeout(checkCelebrations, 800);
+  // v1.2.8: огонёк в топбаре кликабелен — показывает уровень и прогресс
+  setTimeout(() => {
+    $$('.streak', tc).forEach((el) => {
+      if (el._flameBound) return;
+      el._flameBound = true;
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', () => {
+        const f = getFlame();
+        toast(`${f.levelIcon} ${f.levelName} · ${f.streak} дн. · ${f.progress}% до ${f.nextName || 'легенды'}`, f.icon);
+        sound.pop();
+        // клик по огоньку в топбаре — переход в профиль если не там
+        if (tab !== 'profile') {
+          setTimeout(() => { currentTab = 'profile'; renderMain({ tab: 'profile' }); }, 700);
+        }
+      });
+    });
+  }, 100);
 }
 
 // ─── ТАБ: ЛЮДИ (свайпы) ─────────────────────────────────────────────────────
@@ -846,8 +1014,10 @@ function tabDiscover(tc) {
   const st = getState();
   const daily = getDailySurprise();
   const f = getFilters();
-  const hasFilter = f.gender !== 'all' || f.city !== 'all' || f.minAge > 18 || f.maxAge < 35;
+  const hasFilter = f.gender !== 'all' || f.city !== 'all' || f.minAge > 18 || f.maxAge < 60;
 
+  const likesRem = getLikesRemaining();
+  const likesUsed = getLikesUsed();
   tc.innerHTML = `
     <header class="topbar">
       <div class="tb-logo">Reply<span class="tb-dot"></span></div>
@@ -860,14 +1030,15 @@ function tabDiscover(tc) {
     </header>
     <div class="discover-wrap">
       <div class="deck-info">
-        <p class="deck-count">Сегодня <b>${remainingToday()}</b> из ${getFilteredDeck().length} людей по фильтрам</p>
+        <p class="deck-count">Сегодня <b>${remainingToday()}</b> из ${getFilteredDeck().length} людей · ❤️ ${likesRem} лайк${likesRem===1?'':'ов'} из 5</p>
         <div class="deck-dots">${'<i></i>'.repeat(Math.min(10, getFilteredDeck().length))}</div>
+        ${likesRem===0 ? `<div style="margin-top:8px; padding:8px 12px; border-radius:999px; background:rgba(248,113,113,.12); border:1px solid rgba(248,113,113,.3); color:#fca5a5; font-size:12px; font-weight:700;">Лимит лайков на сегодня исчерпан (5/5). Отказы безлимитны — завтра снова можно лайкать. Premium даёт +2 лайка.</div>` : `<div style="margin-top:6px; font-size:11px; color:var(--mut);">Лайков сегодня: ${likesUsed}/5 · отказы безлимитны ♾️</div>`}
       </div>
       <div class="deck" id="deck"></div>
       <div class="deck-actions">
         <button class="da-btn da-pass" title="Пропустить">✕</button>
-        <button class="da-btn da-star" title="Супер-лайк">⭐</button>
-        <button class="da-btn da-like" title="Нравится">❤️</button>
+        <button class="da-btn da-star ${likesRem===0?'disabled':''}" title="Супер-лайк" ${likesRem===0?'disabled':''}>⭐</button>
+        <button class="da-btn da-like ${likesRem===0?'disabled':''}" title="Нравится" ${likesRem===0?'disabled':''}>❤️</button>
       </div>
     </div>`;
 
@@ -884,9 +1055,12 @@ function tabDiscover(tc) {
 
   const drawDots = () => {
     const n = remainingToday();
+    const rem = getLikesRemaining();
+    const used = getLikesUsed();
     const total = Math.min(10, getFilteredDeck().length);
     $$('.deck-dots i').forEach((d, i) => d.classList.toggle('on', i < n));
-    $('.deck-count').innerHTML = `Сегодня <b>${n}</b> из ${getFilteredDeck().length} людей по фильтрам`;
+    const dc = $('.deck-count');
+    if (dc) dc.innerHTML = `Сегодня <b>${n}</b> из ${getFilteredDeck().length} людей · ❤️ ${rem} лайков из 5`;
   };
 
   const cardHtml = (ch, i) => {
@@ -931,7 +1105,7 @@ function tabDiscover(tc) {
         </div>`;
       $('[data-go="refresh"]').addEventListener('click', () => { refreshDeck(); sound.pop(); renderDeck(); });
       $('[data-go="reset-filter"]')?.addEventListener('click', () => {
-        setFilters({ gender: 'all', city: 'all', minAge: 18, maxAge: 35 });
+        setFilters({ gender: 'all', city: 'all', minAge: 18, maxAge: 60 });
         sound.pop();
         tabDiscover(tc);
       });
@@ -971,6 +1145,11 @@ function tabDiscover(tc) {
 
   const actOn = (dir, superLike = false) => {
     if (busy) return;
+    if (dir==='like' && !canLike()) {
+      toast('Лимит 5 лайков в день исчерпан. Отказы безлимитны — завтра снова можно лайкать ❤️', '⏳');
+      sound.nope();
+      return;
+    }
     const top = deck.querySelector('.swipe-card');
     if (!top) {
       toast('Колода закончилась — нажмите «Показать ещё людей»', '🌙');
@@ -981,7 +1160,14 @@ function tabDiscover(tc) {
     top.classList.add('fly-' + dir);
     setTimeout(() => {
       const ch = getChar(top.dataset.id);
-      swipe(ch.id, dir);
+      const res = swipe(ch.id, dir);
+      if (res===false && dir==='like') {
+        // лимит сработал в state
+        toast('Лимит лайков сегодня исчерпан (5/5). Попробуй завтра или оформи Premium (+2)', '💔');
+        busy=false;
+        renderDeck();
+        return;
+      }
       if (dir === 'like') {
         burstHearts(deck);
         setTimeout(() => showMatch(ch), 650);
@@ -1109,35 +1295,41 @@ function renderPlanner({ charId }) {
     nextBtn.textContent = step === 3 ? 'Забронировать 💘' : 'Далее';
     nextBtn.disabled = step === 0 ? !(plan.dateISO && plan.time) : step === 1 ? !plan.locationId : step === 2 ? !plan.activities.length : false;
   };
+  // для доступа из внутренних обработчиков (скип времени)
+  window.__plannerRender = render;
 
   const renderStepTime = () => {
     body.innerHTML = `
       <div class="pl-step">
         <div class="pl-emoji">📅</div>
         <h2>Когда встретимся?</h2>
-        <p class="pl-sub">Выберите день</p>
+        <p class="pl-sub">Выбери день — теперь от утра до ночи 🌅🌙</p>
         <div class="pl-nav-wrap">
           <button class="pl-nav" id="dayPrev" aria-label="Назад">‹</button>
           <div class="day-chips"></div>
           <button class="pl-nav" id="dayNext" aria-label="Вперёд">›</button>
         </div>
-        <p class="pl-sub">Выберите время</p>
+        <p class="pl-sub">Время — утро, день, вечер, ночь</p>
         <div class="time-chips"></div>
         <div class="time-conflict" hidden></div>
+        <div style="margin-top:14px; padding:12px; border-radius:16px; background:linear-gradient(135deg, rgba(139,92,246,.14), rgba(236,72,153,.10)); border:1px solid rgba(139,92,246,.22); display:flex; align-items:center; gap:10px;">
+          <span style="font-size:22px;">⚡</span>
+          <div style="flex:1;">
+            <b style="font-size:13px;">Хочешь сразу в чат?</b><br>
+            <small style="color:var(--mut); font-size:11.5px;">Первое свидание = чат 15-30 мин, ограничено по времени. Дату/время можно пропустить — упор на интерактив.</small>
+          </div>
+          <button class="btn btn-ghost-sm" id="skipTime" style="white-space:nowrap;">Сразу в чат</button>
+        </div>
       </div>`;
     const dc = $('.day-chips');
-    // стрелки по краям для удобного перелистывания дней
     const dayPrevBtn = $('#dayPrev', body);
     const dayNextBtn = $('#dayNext', body);
-    const scrollDays = (dir) => {
-      dc.scrollBy({ left: dir * 88, behavior: 'smooth' });
-      sound.pop();
-    };
+    const scrollDays = (dir) => { dc.scrollBy({ left: dir * 88, behavior: 'smooth' }); sound.pop(); };
     dayPrevBtn?.addEventListener('click', () => scrollDays(-1));
     dayNextBtn?.addEventListener('click', () => scrollDays(1));
     const conflictEl = $('.time-conflict');
     const checkConflict = () => {
-      if (!plan.dateISO || !plan.time) { conflictEl.hidden = true; return; }
+      if (!plan.dateISO || !plan.time) { conflictEl.hidden = true; nextBtn.disabled = true; return; }
       const c = planConflict(plan.dateISO, plan.time, charId);
       if (c) {
         conflictEl.hidden = false;
@@ -1147,7 +1339,16 @@ function renderPlanner({ charId }) {
       }
       nextBtn.disabled = !(plan.dateISO && plan.time) || !!c;
     };
-    days.forEach((d, i) => {
+    $('#skipTime', body)?.addEventListener('click', () => {
+      const now = new Date();
+      plan.dateISO = now.toISOString().slice(0,10);
+      plan.time = now.toTimeString().slice(0,5);
+      sound.pop();
+      toast('Отлично — сразу в интерактив! Выбери место и активности', '⚡');
+      step = 1;
+      render();
+    });
+    days.forEach((d) => {
       const b = document.createElement('button');
       const wd = d.toLocaleDateString('ru-RU', { weekday: 'short' });
       b.className = 'day-chip';
@@ -1185,7 +1386,7 @@ function renderPlanner({ charId }) {
       <div class="pl-step">
         <div class="pl-emoji">📍</div>
         <h2>Куда пойдём?</h2>
-        <p class="pl-sub">Каждая локация живёт своей жизнью: музыка, погода, атмосфера</p>
+        <p class="pl-sub">Каждая локация — атмосфера для чат-свидания</p>
         <div class="loc-grid"></div>
       </div>`;
     const grid = $('.loc-grid');
@@ -1221,11 +1422,10 @@ function renderPlanner({ charId }) {
       <div class="pl-step">
         <div class="pl-emoji">🎯</div>
         <h2>Что будем делать?</h2>
-        <p class="pl-sub">Доступны только выбранные активности</p>
+        <p class="pl-sub">Выбери активности для чат-свидания</p>
         <div class="act-grid"></div>
       </div>`;
     const grid = $('.act-grid');
-    const loc = getLoc(plan.locationId);
     ACTIVITIES.forEach((a) => {
       const fits = !a.locations || a.locations.includes(plan.locationId);
       if (!fits) return;
@@ -1252,30 +1452,49 @@ function renderPlanner({ charId }) {
 
   const renderStepSummary = () => {
     const loc = getLoc(plan.locationId);
-    const d = new Date(plan.dateISO + 'T00:00');
+    const dRaw = plan.dateISO || new Date().toISOString().slice(0,10);
+    const d = new Date(dRaw + 'T00:00');
     const otherPlans = getState().planned.filter((p) => p.charId !== charId).length;
     body.innerHTML = `
       <div class="pl-step">
         <div class="pl-emoji">💘</div>
         <h2>Всё готово</h2>
-        <p class="pl-sub">Проверьте планы на наше первое свидание</p>
+        <p class="pl-sub">Проверь атмосферу для первого чат-свидания</p>
         <div class="summary-card">
           <div class="sum-row"><span class="sum-emoji">${loc.emoji}</span><div><b>${loc.name}</b><small>${loc.tag}</small></div></div>
-          <div class="sum-row"><span class="sum-emoji">📅</span><div><b>${d.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}</b><small>${plan.time}</small></div></div>
+          <div class="sum-row"><span class="sum-emoji">📅</span><div><b>${d.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}</b><small>${plan.time || 'сейчас'}</small></div></div>
           <div class="sum-row"><span class="sum-emoji">🎯</span><div><b>Активности</b><small>${plan.activities.map((a) => ACTIVITIES.find((x) => x.id === a)?.emoji).join(' ')}</small></div></div>
         </div>
-        <div class="sum-note">💡 До свидания чат останется закрытым — появится только на месте${otherPlans ? `. Также у вас запланировано ещё ${otherPlans} свидание(й).` : ''}</div>
+        <div class="sum-note">💡 v1.2.9: упор на интерактив — первое свидание это чат 15-30 мин (таймер). Дата/время теперь утро-ночь, но можно и сразу. Лайков в день — 5, отказы безлимит.${otherPlans ? ` Также у вас ещё ${otherPlans} свидание(й).` : ''}</div>
+        <button class="btn btn-ghost" id="instantChat" style="width:100%; margin-top:12px; border:1px dashed var(--stroke);">⚡ Начать чат сейчас — 15 мин ⏳</button>
       </div>`;
+    $('#instantChat', body)?.addEventListener('click', () => {
+      const now = new Date();
+      const iso = now.toISOString().slice(0,10);
+      const time = now.toTimeString().slice(0,5);
+      plan.dateISO = iso;
+      plan.time = time;
+      const rec = planDate(plan);
+      unlock('planner');
+      sound.tada();
+      toast('Чат-свидание начинается прямо сейчас!', '⚡');
+      show('date', { planId: rec.id });
+    });
   };
 
   nextBtn.addEventListener('click', () => {
     if (step < 3) { step++; sound.pop(); render(); }
     else {
-      const conflict = planConflict(plan.dateISO, plan.time, charId);
+      const conflict = plan.dateISO && plan.time ? planConflict(plan.dateISO, plan.time, charId) : null;
       if (conflict) {
         toast('Это время уже занято другим свиданием', '⚠️');
         step = 0; sound.pop(); render();
         return;
+      }
+      if (!plan.dateISO || !plan.time) {
+        const now = new Date();
+        plan.dateISO = now.toISOString().slice(0,10);
+        plan.time = now.toTimeString().slice(0,5);
       }
       planDate(plan);
       unlock('planner');
@@ -1291,7 +1510,7 @@ function renderPlanner({ charId }) {
   render();
 }
 
-// ─── ОЖИДАНИЕ ───────────────────────────────────────────────────────────────
+function renderWaiting(opts = {}) {
 
 function renderWaiting(opts = {}) {
   const st = getState();
@@ -2071,18 +2290,35 @@ function tabProfile(tc) {
           <div class="ps"><b>${achievements}</b><span>Наград</span></div>
           <div class="ps"><b>${st.streak}</b><span>Серия 🔥</span></div>
         </div>
-        ${(() => { const f = getFlame(); return `
-        <div class="flame-wrap" id="flameWrap" title="Нажми чтобы одеть огонёк">
-          <div class="flame-emoji">${f.icon}</div>
-          <div style="flex:1; text-align:left;">
-            <b>${f.streak ? `Огонёк ${f.level} ур. · ${f.streak} ${f.streak===1?'день':'дней'} подряд` : 'Огонёк спит · зайди завтра'}</b>
-            <small class="flame-level" style="display:block; color:var(--mut); font-size:11px;">Стиль: ${f.name} · нажми чтобы переодеть</small>
+        ${(() => {
+          const f = getFlame();
+          const barW = f.nextThreshold ? `${f.progress}%` : '100%';
+          return `
+        <div class="flame-wrap" id="flameWrap" title="Нажми чтобы одеть огонёк" style="cursor:pointer; display:flex; flex-direction:column; gap:10px; padding:16px; background:linear-gradient(160deg, rgba(251,146,60,.14), rgba(251,191,36,.10)); border:1px solid rgba(251,146,60,.22); border-radius:22px; margin:14px 0;">
+          <div style="display:flex; align-items:center; gap:12px; width:100%;">
+            <div class="flame-emoji" style="font-size:36px; filter: drop-shadow(0 6px 16px rgba(251,146,60,.45)); animation: flamePulse 2.2s ease-in-out infinite;">${f.icon}</div>
+            <div style="flex:1; text-align:left;">
+              <b style="font-size:14px;">${f.levelIcon} ${f.levelName} · ${f.level} ур. · ${f.streak} ${f.streak===1?'день':'дней'} подряд</b>
+              <small class="flame-level" style="display:block; color:var(--mut); font-size:11px; margin-top:2px;">Стиль: ${f.name} · ${f.desc} · 👗 переодеть</small>
+            </div>
+            <span style="font-size:18px;">👗</span>
           </div>
-          <span style="font-size:18px;">👗</span>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div style="flex:1; height:8px; background:rgba(255,255,255,.08); border-radius:999px; overflow:hidden;">
+              <div style="height:100%; width:${barW}; background:linear-gradient(90deg, ${f.outfit.color || '#f59e0b'}, #fbbf24); border-radius:999px; transition:width .8s ease;"></div>
+            </div>
+            <small style="font-size:10.5px; font-weight:800; color:${f.outfit.color || '#f59e0b'};">${f.progress}%</small>
+          </div>
+          <small style="font-size:11px; color:var(--mut);">${f.nextThreshold ? `До <b style="color:var(--txt);">${f.nextName}</b>: ${f.toNext} дн. — ${f.levelDef.reward}` : `${f.levelDef.reward}`}</small>
         </div>
-        <div class="flame-outfits" id="flameOutfits" hidden>
-          ${Object.entries(FLAME_STYLES).map(([k,v]) => `<button class="flame-outfit ${f.outfit.name===v.name?'on':''}" data-style="${k}" title="${v.name}">${v.emoji}</button>`).join('')}
-        </div>`; })()}
+        <div class="flame-outfits" id="flameOutfits" hidden style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin:0 0 12px; padding:8px; background:var(--card); border:1px solid var(--stroke); border-radius:18px;">
+          ${Object.entries(FLAME_STYLES).map(([k,v]) => `<button class="flame-outfit ${f.outfit.name===v.name?'on':''}" data-style="${k}" title="${v.name}: ${v.desc}" style="width:52px; height:52px; border-radius:16px; background:var(--card2); border:1.5px solid ${f.outfit.name===v.name? v.color : 'var(--stroke)'}; font-size:22px; display:grid; place-items:center; transition:all .2s; position:relative;">
+            <span>${v.emoji}</span>
+            <small style="position:absolute; bottom:2px; font-size:8px; font-weight:800; color:${v.color};">${v.name}</small>
+          </button>`).join('')}
+          <div style="width:100%; text-align:center; font-size:11px; color:var(--mut); margin-top:4px;">Выбери стиль огонька — как в Duolingo/TikTok: огонь меняет внешний вид, уровень зависит от серии</div>
+        </div>`;
+        })()}
         <div class="prof-card">
           <div class="pc-row" id="profMbtiRow" style="cursor:pointer;">
             <span>🧬</span>
@@ -2141,18 +2377,35 @@ function tabProfile(tc) {
   if (premBtn) premBtn.addEventListener('click', openPremium);
   tc.querySelector('[data-act="settings2"]').addEventListener('click', openSettings);
   tc.querySelector('[data-edit-profile="1"]')?.addEventListener('click', openEditProfile);
-  // огонёк — переодевание
+  // огонёк — переодевание (v1.2.8)
   $('#flameWrap', tc)?.addEventListener('click', () => {
     const box = $('#flameOutfits', tc);
-    if (box) box.hidden = !box.hidden;
+    if (!box) return;
+    // v1.2.8: корректно переключаем hidden + display:flex
+    const isHidden = box.hidden || box.style.display === 'none' || getComputedStyle(box).display === 'none';
+    if (isHidden) {
+      box.hidden = false;
+      box.style.display = 'flex';
+    } else {
+      box.hidden = true;
+      box.style.display = 'none';
+    }
     sound.pop();
   });
   $$('.flame-outfit', tc).forEach((b) => {
     b.addEventListener('click', () => {
       setFlameOutfit(b.dataset.style);
       sound.pop();
-      toast(`Огонёк теперь ${FLAME_STYLES[b.dataset.style]?.name || b.dataset.style}`, FLAME_STYLES[b.dataset.style]?.emoji || '🔥');
+      const st = FLAME_STYLES[b.dataset.style];
+      toast(`Огонёк теперь ${st?.name || b.dataset.style}`, st?.emoji || '🔥');
+      // конфетти при смене стиля
+      confetti(tc);
       tabProfile(tc);
+      // сразу раскрываем блок после смены, чтобы видно было выделение
+      setTimeout(() => {
+        const box = $('#flameOutfits', tc);
+        if (box) { box.hidden = false; box.style.display = 'flex'; }
+      }, 120);
     });
   });
 
@@ -2593,7 +2846,7 @@ function openSettings() {
       <div style="margin-top:16px; display:flex; flex-direction:column; gap:8px;">
         <button class="btn btn-ghost" id="setReset" style="color:var(--mut2);">Сбросить все данные</button>
       </div>
-      <p class="prem-fine" style="text-align:center; margin-top:12px;">Reply v1.2.7 · полная версия · живой мир + ИИ Groq + сезоны + главы</p>
+      <p class="prem-fine" style="text-align:center; margin-top:12px;">Reply v1.2.9 · тема+онбординг+лайк-лимит + огонёк/ДР v2 · живой мир + ИИ Groq + сезоны + главы</p>
     </div>`;
   app.appendChild(sheet);
   $('.overlay', sheet).addEventListener('click', () => sheet.remove());

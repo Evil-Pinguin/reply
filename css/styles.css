@@ -1337,10 +1337,12 @@ body.theme-light .app-frame {
 body.theme-light .topbar {
   background: rgba(255, 255, 255, 0.85);
   border-bottom: 1px solid var(--stroke);
+  backdrop-filter: blur(12px);
 }
 body.theme-light .bottom-nav {
   background: rgba(255, 255, 255, 0.92);
-  border-top: 1px solid var(--stroke);
+  border: 1px solid var(--stroke);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06);
 }
 body.theme-light .swipe-card {
   background: #ffffff;
@@ -1382,18 +1384,103 @@ body.theme-light .da-btn {
   color: var(--txt);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
 }
-body.theme-light .chat-input-bar {
-  background: rgba(255, 255, 255, 0.92);
+/* ── ЧАТ светлая тема — фикс тёмного чата ─────────────────────────────── */
+body.theme-light .chat-sheet {
+  background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(244,245,249,.96));
+  border: 1px solid rgba(0,0,0,.08);
+  box-shadow: 0 -12px 40px rgba(0,0,0,.08);
+}
+body.theme-light .chat-head {
+  background: rgba(255,255,255,.75);
+  border-bottom: 1px solid var(--stroke);
+}
+body.theme-light .chat-messages {
+  background: transparent;
+}
+body.theme-light .msg-partner .msg-bubble {
+  background: #ffffff;
+  color: var(--txt);
+  border: 1px solid rgba(0,0,0,.08);
+  box-shadow: 0 4px 16px rgba(0,0,0,.05);
+}
+body.theme-light .msg-user .msg-bubble {
+  background: linear-gradient(135deg, #ff5e7e, #ff8e53);
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(255,94,126,.25);
+}
+body.theme-light .msg-system span {
+  background: rgba(0,0,0,.06);
+  border: 1px solid rgba(0,0,0,.08);
+  color: var(--mut);
+}
+body.theme-light .chat-actions {
+  background: rgba(255,255,255,.6);
+  border-top: 1px solid var(--stroke);
+  border-bottom: 1px solid var(--stroke);
+}
+body.theme-light .act-chip {
+  background: #ffffff;
+  border: 1px solid var(--stroke);
+  color: var(--txt);
+}
+body.theme-light .chat-input {
+  background: rgba(255,255,255,.85);
   border-top: 1px solid var(--stroke);
 }
-body.theme-light .chat-input-wrap input {
-  background: rgba(0, 0, 0, 0.04);
+body.theme-light .ci-field {
+  background: #ffffff;
+  border: 1px solid var(--stroke);
   color: var(--txt);
 }
-body.theme-light .msg.partner .msg-bubble {
-  background: rgba(0, 0, 0, 0.05);
+body.theme-light .ci-field::placeholder { color: var(--mut2); }
+body.theme-light .ci-voice {
+  background: #ffffff;
+  border: 1px solid var(--stroke);
   color: var(--txt);
 }
+body.theme-light .ch-avatar {
+  border-color: rgba(0,0,0,.1);
+}
+body.theme-light .ch-timer {
+  background: rgba(251,191,36,.15);
+  border-color: rgba(251,191,36,.3);
+  color: #8a5a00;
+}
+body.theme-light .ch-btn {
+  background: #ffffff;
+  border: 1px solid var(--stroke);
+}
+body.theme-light .typing-dots i { background: var(--mut2); }
+body.theme-light .q-tag { color: #d97706; }
+body.theme-light .splash {
+  background:
+    radial-gradient(600px 400px at 50% 30%, rgba(139, 92, 246, .15), transparent 70%),
+    radial-gradient(500px 400px at 80% 80%, rgba(255, 94, 126, .10), transparent 70%),
+    var(--bg);
+}
+body.theme-light .logo-text {
+  background: linear-gradient(120deg, #151324, #ff5e7e 60%, #ff8e53);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+body.theme-light .splash-tag { color: #2a2540; }
+body.theme-light .splash-sub { color: var(--mut); }
+body.theme-light .splash .theme-btn {
+  background: #ffffff;
+  border-color: var(--stroke);
+  color: var(--txt);
+}
+body.theme-light .splash .theme-btn.sel {
+  background: linear-gradient(135deg, #ff5e7e, #ff8e53);
+  color: #fff;
+  border-color: transparent;
+}
+body.theme-light .onboarding {
+  background: var(--bg);
+}
+
+
 
 /* ═══════════════════════════════════════════════════════════════════════
    Дополнительные UI-компоненты: MBTI, фильтры, сюрприз, темы
@@ -1607,17 +1694,137 @@ body.theme-light .msg.partner .msg-bubble {
 .flt-age-btn { width:34px; height:34px; border-radius:10px; background:var(--card2); border:1px solid var(--stroke); font-size:18px; display:grid; place-items:center; flex:0 0 auto; transition: all .15s; }
 .flt-age-btn:active { transform:scale(.88); background:var(--card); }
 
-/* ── огонёк-стрик (TikTok/Duolingo) ───────────────────────────────────── */
-.flame-wrap { display:flex; flex-direction:column; align-items:center; gap:8px; padding:16px; background: linear-gradient(160deg, rgba(251,146,60,.14), rgba(251,191,36,.10)); border:1px solid rgba(251,146,60,.22); border-radius:22px; margin:14px 0; }
-.flame-emoji { font-size:44px; filter: drop-shadow(0 6px 16px rgba(251,146,60,.45)); animation: flamePulse 2.2s ease-in-out infinite; }
+/* ── огонёк-стрик v1.2.8 (TikTok/Duolingo) ───────────────────────────────── */
+.flame-wrap { display:flex; flex-direction:column; gap:10px; padding:16px; background: linear-gradient(160deg, rgba(251,146,60,.14), rgba(251,191,36,.10)); border:1px solid rgba(251,146,60,.22); border-radius:22px; margin:14px 0; cursor:pointer; transition: transform .18s, box-shadow .25s; }
+.flame-wrap:active { transform: scale(.985); }
+.flame-emoji { font-size:36px; filter: drop-shadow(0 6px 16px rgba(251,146,60,.45)); animation: flamePulse 2.2s ease-in-out infinite; }
 @keyframes flamePulse { 0%,100% { transform:scale(1); filter: drop-shadow(0 6px 16px rgba(251,146,60,.45)); } 50% { transform:scale(1.08); filter: drop-shadow(0 10px 24px rgba(251,146,60,.65)); } }
-.flame-level { font-size:12px; font-weight:800; color:#fbbf24; }
-.flame-outfits { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:4px; }
-.flame-outfit { width:42px; height:42px; border-radius:14px; background:var(--card); border:1.5px solid var(--stroke); font-size:20px; display:grid; place-items:center; transition: all .2s; }
+.flame-level { font-size:11px; font-weight:700; color:var(--mut); }
+.flame-outfits { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin:0 0 12px; padding:10px; background:var(--card); border:1px solid var(--stroke); border-radius:18px; }
+.flame-outfits[hidden] { display:none !important; }
+.flame-outfit { width:52px; height:52px; border-radius:16px; background:var(--card2); border:1.5px solid var(--stroke); font-size:22px; display:grid; place-items:center; transition: all .2s; position:relative; }
 .flame-outfit.on { border-color:#f59e0b; background: rgba(251,191,36,.18); box-shadow:0 6px 16px rgba(251,146,60,.25); transform: translateY(-2px); }
+.flame-outfit:active { transform: scale(.90); }
+.flame-bar { height:8px; background:rgba(255,255,255,.08); border-radius:999px; overflow:hidden; }
+.flame-bar > div { height:100%; background:linear-gradient(90deg,#f59e0b,#fbbf24); border-radius:999px; transition: width .8s cubic-bezier(.22,.9,.3,1); }
+.streak { cursor:pointer; user-select:none; transition: transform .15s, filter .2s; }
+.streak:active { transform: scale(.93); filter: brightness(1.2); }
 
 /* ── v1.2.7: воронка отмены Premium ─────────────────────────────────────── */
 .cf-emoji { font-size: 46px; margin-bottom: 6px; line-height: 1; }
 .cf-reasons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .cf-reasons .chip { padding: 9px 12px; font-size: 12.5px; }
 .cancel-sheet .edit-actions { display: flex; gap: 8px; margin-top: 6px; }
+
+
+/* ── Меню еды — бегунок (скролл) v1.2.9 ───────────────────────────────── */
+.menu-sheet .menu-list {
+  max-height: 52vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,0,0,.2) transparent;
+  padding-right: 4px;
+}
+.menu-sheet .menu-list::-webkit-scrollbar { width: 6px; }
+.menu-sheet .menu-list::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,.18);
+  border-radius: 999px;
+}
+body.theme-light .menu-sheet .menu-list::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,.2);
+}
+.menu-card { position: relative; }
+.menu-list { scroll-behavior: smooth; }
+
+/* ── Адаптив под компьютер и телефон v1.2.9 ────────────────────────────── */
+@media (max-width: 600px) {
+  .app-frame { max-width: 100%; border-radius: 0; height: 100dvh; }
+  .discover-wrap { padding: 0 4px; }
+  .deck { margin: 0 12px; }
+}
+
+/* Планшет */
+@media (min-width: 600px) and (max-width: 899px) {
+  .app-frame { max-width: 560px; }
+  .discover-wrap { max-width: 520px; margin: 0 auto; }
+}
+
+/* Десктоп — убираем телефонный формат, делаем нормальный адаптив */
+@media (min-width: 900px) {
+  body { padding: 20px; background: radial-gradient(1200px 800px at 70% -10%, #1c1440 0%, #0a0c18 55%); }
+  .app-frame {
+    max-width: 1100px;
+    width: 100%;
+    height: min(860px, 92vh);
+    border-radius: 24px;
+    display: grid;
+    grid-template-rows: 1fr;
+    overflow: hidden;
+    box-shadow: 0 30px 80px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.06);
+  }
+  #app { overflow: hidden; }
+  .main-screen { display: flex; flex-direction: column; }
+  .tab-content { padding-bottom: 20px; }
+  .bottom-nav {
+    position: relative;
+    left: auto; right: auto; bottom: auto;
+    border-radius: 0;
+    border: none;
+    border-bottom: 1px solid var(--stroke);
+    background: rgba(18,16,40,.9);
+    backdrop-filter: blur(20px);
+    justify-content: flex-start;
+    padding: 10px 18px;
+    gap: 6px;
+  }
+  .nav-btn { flex-direction: row; gap: 8px; padding: 10px 16px; border-radius: 12px; }
+  .nav-btn em { font-size: 13px; }
+  .nav-btn span { font-size: 18px; }
+  .discover-wrap { max-width: 640px; margin: 0 auto; width: 100%; }
+  .deck { margin: 0 auto; max-width: 480px; min-height: 560px; }
+  .profile { max-width: 720px; margin: 0 auto; width: 100%; }
+  .prof-cover { height: 260px; }
+  /* Чат на десктопе — сцена izquierda, чат справа */
+  .date-screen { display: grid; grid-template-columns: 1fr 420px; overflow: hidden; }
+  .scene-wrap { position: relative !important; inset: auto !important; height: 100%; min-height: 100%; }
+  .chat-wrap { position: relative !important; top: auto !important; left: auto !important; right: auto !important; bottom: auto !important; height: 100%; }
+  .chat-sheet { border-radius: 16px 0 0 0; height: 100%; }
+  .date-screen.chat-expanded { grid-template-columns: 1fr; }
+  .date-screen.chat-expanded .chat-wrap { grid-column: 1 / -1; height: 100vh; }
+  .date-screen.chat-expanded .chat-sheet { border-radius: 0; }
+  /* Планировщик и остальные — шире */
+  .planner, .waiting, .recap, .premium { max-width: 720px; margin: 0 auto; width: 100%; }
+  .loc-grid { grid-template-columns: repeat(3, 1fr); }
+  .act-grid { grid-template-columns: repeat(3, 1fr); }
+  .coll-grid { grid-template-columns: repeat(4, 1fr); }
+  .coll-grid.chars { grid-template-columns: repeat(5, 1fr); }
+}
+
+@media (min-width: 1200px) {
+  .app-frame { max-width: 1240px; height: min(900px, 88vh); }
+  .discover-wrap { max-width: 720px; }
+  .deck { max-width: 520px; min-height: 620px; }
+  .profile { max-width: 820px; }
+  .planner, .waiting, .recap, .premium { max-width: 820px; }
+}
+
+/* Светлая тема — десктоп фон */
+@media (min-width: 900px) {
+  body.theme-light { background: radial-gradient(1200px 800px at 70% -10%, #eae3f8 0%, #f4f5f9 55%); }
+}
+
+
+/* ── Спиннер загрузки v1.3.2 ──────────────────────────────────────────── */
+.spinner {
+  width: 44px;
+  height: 44px;
+  border: 3px solid var(--stroke);
+  border-top-color: #ff5e7e;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+  display: inline-block;
+}
+.spinner.small { width: 22px; height: 22px; border-width: 2px; }
+.spinner.large { width: 56px; height: 56px; border-width: 4px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+body.theme-light .spinner { border-color: rgba(0,0,0,.08); border-top-color: #ff5e7e; }

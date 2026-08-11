@@ -1,6 +1,6 @@
 // ─── Reply · состояние и сохранение ─────────────────────────────────────────
 
-import { CHARACTERS, DAILY_SURPRISES, shuffle } from './data.js';
+import { CHARACTERS, DAILY_SURPRISES, DAILY_LIKE_LIMIT, shuffle } from './data.js';
 import { getSeason } from './seasons.js';
 
 const KEY = 'reply_state_v1';
@@ -16,15 +16,15 @@ function defaultState() {
     user: {
       name: '', gender: 'male', targetGender: 'all', birthday: '', age: 24, city: 'Москва',
       avatarEmoji: '😊', avatarLabel: 'Тёплый', avatarImg: 'assets/avatars/user-1.png', avatarHue: 0,
-      mbti: 'ENFP', values: ['Честность', 'Свобода', 'Творчество'], habits: ['Кофе по утрам', 'Вечерние прогулки'],
-      about: '', interests: ['Кофе', 'Путешествия', 'Музыка'], goals: 'Серьёзные отношения',
+      mbti: 'ENFP', values: [], habits: [],
+      about: '', interests: [], goals: '',
     },
     theme: 'dark',       // 'dark' | 'light' | 'auto'
     filters: {           // фильтры в ленте свайпов
       gender: 'all',     // 'all' | 'female' | 'male'
       city: 'all',       // 'all' | 'Москва' | 'Санкт-Петербург' | ...
       minAge: 18,
-      maxAge: 35,
+      maxAge: 60,
     },
     surpriseDay: null,   // дата последнего полученного сюрприза дня
     surpriseItem: null,  // текущий сюрприз
@@ -49,6 +49,8 @@ function defaultState() {
     flameOutfit: 'fire', // fire | ice | neon | gold | pink — как в Duolingo/TikTok
     lastBirthdayShown: null, // YYYY-MM-DD когда показывали поздравление
     dailyGiftDay: null, // YYYY-MM-DD последнего дневного подарка
+    likesDay: '', // день учёта лайков
+    likesUsed: 0,         // сколько лайков использовано сегодня (лимит 5, отказы безлимит)
     collections: {       // коллекции: собранные предметы живой вселенной
       locations: [],     // id локаций, где были свидания
       dishes: [],        // названия заказанных блюд
@@ -78,12 +80,19 @@ function load() {
     if (!parsed.planned) parsed.planned = [];
     if (!parsed.filters) parsed.filters = def.filters;
     if (!parsed.theme) parsed.theme = 'dark';
-    // свежие карточки на новый день
-    if (parsed.day !== def.day) {
-      parsed.day = def.day;
+    // v1.2.9: свежие карточки и сброс лайков при новом дне
+    const today = (()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
+    if (parsed.day !== today) {
+      parsed.day = today;
       parsed.deck = [];
       parsed.swiped = {};
     }
+    if (parsed.likesDay !== today) {
+      parsed.likesDay = today;
+      parsed.likesUsed = 0;
+    }
+    if (typeof parsed.likesUsed !== 'number') parsed.likesUsed = 0;
+    if (!parsed.likesDay) parsed.likesDay = today;
     return { ...def, ...parsed, user: { ...def.user, ...(parsed.user || {}) } };
   } catch (e) {
     return defaultState();
@@ -109,24 +118,32 @@ export function setUser(patch) {
 // ─── Темы оформления ────────────────────────────────────────────────────────
 
 export function getTheme() {
-  return state.theme || 'dark';
+  try { return (state && state.theme) || 'dark'; } catch(e){ return 'dark'; }
 }
 
 export function setTheme(theme) {
-  state.theme = theme;
-  applyTheme(theme);
-  save();
+  try {
+    if (!state) state = { theme: 'dark' };
+    state.theme = theme;
+    applyTheme(theme);
+    save();
+  } catch(e){ console.error('setTheme',e); }
 }
 
-export function applyTheme(theme = state.theme) {
-  const isLight = theme === 'light' || (theme === 'auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
-  document.body.classList.toggle('theme-light', isLight);
+export function applyTheme(theme) {
+  try {
+    const t = theme || (state && state.theme) || 'dark';
+    const isLight = t === 'light' || (t === 'auto' && typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.toggle('theme-light', isLight);
+    }
+  } catch(e){ console.error('applyTheme',e); }
 }
 
 // ─── Фильтры ленты ──────────────────────────────────────────────────────────
 
 export function getFilters() {
-  return state.filters || { gender: 'all', city: 'all', minAge: 18, maxAge: 35 };
+  return state.filters || { gender: 'all', city: 'all', minAge: 18, maxAge: 60 };
 }
 
 export function setFilters(patch) {
@@ -216,9 +233,28 @@ export function nextCard() {
   return next ? CHARACTERS.find((c) => c.id === next) : null;
 }
 
+// ─── Лимит лайков v1.2.9: 5 лайков/день, отказы безлимит ────────────────────
+function _todayStrLocal(){
+  const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+export function getLikesUsed(){
+  const today=_todayStrLocal();
+  if (state.likesDay !== today){ state.likesDay = today; state.likesUsed = 0; save(); }
+  return state.likesUsed || 0;
+}
+export function getLikesRemaining(){
+  const used=getLikesUsed();
+  const limit=DAILY_LIKE_LIMIT||5;
+  const bonus=state.premium?2:0;
+  return Math.max(0, limit+bonus-used);
+}
+export function canLike(){ return getLikesRemaining()>0; }
+
 export function swipe(id, dir) {
+  if (dir==='like' && !canLike()) return false;
   state.swiped[id] = dir;
   if (dir === 'like') {
+    state.likesUsed = (state.likesUsed||0)+1;
     if (!state.matched.includes(id)) state.matched.push(id);
     if (!state.activeMatch) state.activeMatch = id;
     collect('chars', id);
@@ -405,25 +441,72 @@ export function compatibilityWith(charId) {
   return Math.min(99, base + dates * 1 + Math.round((rel.stats.sympathy + rel.stats.trust) / 20));
 }
 
-// ─── Огонёк-стрик (Duolingo/TikTok) ────────────────────────────────────────
+// ─── Огонёк-стрик (Duolingo/TikTok) v1.2.8 ─────────────────────────────────
 export const FLAME_STYLES = {
-  fire: { emoji: '🔥', name: 'Огонь', color: '#f59e0b' },
-  ice:  { emoji: '🧊', name: 'Лёд', color: '#38bdf8' },
-  neon: { emoji: '⚡', name: 'Неон', color: '#a78bfa' },
-  gold: { emoji: '🌟', name: 'Золото', color: '#fbbf24' },
-  pink: { emoji: '💖', name: 'Розовый', color: '#ec4899' },
+  fire: { emoji: '🔥', name: 'Огонь', color: '#f59e0b', desc: 'Классика — тёплая и яркая' },
+  ice:  { emoji: '🧊', name: 'Лёд',   color: '#38bdf8', desc: 'Холодная решимость' },
+  neon: { emoji: '⚡', name: 'Неон',  color: '#a78bfa', desc: 'Энергия ночи' },
+  gold: { emoji: '🌟', name: 'Золото', color: '#fbbf24', desc: 'Для легендарных серий' },
+  pink: { emoji: '💖', name: 'Розовый', color: '#ec4899', desc: 'Мягкая любовь к ритуалу' },
 };
+
+export const FLAME_LEVELS = [
+  { level: 1, name: 'Искра',   min: 0,  max: 0,  icon: '✨',   next: 1,  reward: 'До огонька остался 1 день' },
+  { level: 2, name: 'Огонёк',  min: 1,  max: 2,  icon: '🔥',   next: 3,  reward: 'Ты зажёг огонёк! 3 дня → Пламя' },
+  { level: 3, name: 'Пламя',   min: 3,  max: 6,  icon: '🔥',   next: 7,  reward: 'Пламя разгорается. 7 дней → Костёр' },
+  { level: 4, name: 'Костёр',  min: 7,  max: 13, icon: '🔥🔥', next: 14, reward: 'Вау, костёр! 14 дней → Легенда 👑' },
+  { level: 5, name: 'Легенда', min: 14, max: Infinity, icon: '🔥👑', next: null, reward: 'Ты легенда Reply. Огонёк с короной 👑' },
+];
+
+function _levelForStreak(s) {
+  for (let i = FLAME_LEVELS.length - 1; i >= 0; i--) {
+    if (s >= FLAME_LEVELS[i].min) return FLAME_LEVELS[i];
+  }
+  return FLAME_LEVELS[0];
+}
+
 export function getFlame() {
   const s = state.streak || 0;
-  let level = 1;
-  if (s >= 14) level = 5;
-  else if (s >= 7) level = 4;
-  else if (s >= 3) level = 3;
-  else if (s >= 1) level = 2;
+  const lvl = _levelForStreak(s);
   const outfit = FLAME_STYLES[state.flameOutfit] || FLAME_STYLES.fire;
-  const size = level === 5 ? '🔥👑' : level === 4 ? '🔥🔥' : level >= 3 ? '🔥' : '✨';
-  return { streak: s, level, outfit, icon: outfit.emoji, size, name: outfit.name };
+  // иконка — это стиль (outfit emoji), но размер/корона берётся из уровня
+  const levelIcon = lvl.icon;
+  const size = levelIcon;
+  // прогресс до следующего уровня
+  let progress = 100;
+  let toNext = 0;
+  let nextName = null;
+  if (lvl.next !== null) {
+    const nextLvl = FLAME_LEVELS.find((x) => x.min === lvl.next);
+    const span = (nextLvl ? nextLvl.min : lvl.next) - lvl.min;
+    const done = s - lvl.min;
+    progress = span > 0 ? Math.min(99, Math.max(0, Math.round((done / span) * 100))) : 0;
+    toNext = (nextLvl ? nextLvl.min : lvl.next) - s;
+    nextName = nextLvl ? nextLvl.name : null;
+  }
+  return {
+    streak: s,
+    level: lvl.level,
+    levelName: lvl.name,
+    levelDef: lvl,
+    outfit,
+    icon: outfit.emoji, // иконка стиля
+    levelIcon,          // иконка уровня
+    size,
+    name: outfit.name,
+    progress,         // 0-100 до следующего уровня
+    toNext,           // дней до следующего
+    nextName,
+    nextThreshold: lvl.next,
+    desc: lvl.reward,
+  };
 }
+
+export function getFlameProgress() {
+  const f = getFlame();
+  return { level: f.level, streak: f.streak, progress: f.progress, toNext: f.toNext, nextName: f.nextName };
+}
+
 export function setFlameOutfit(style) {
   if (!FLAME_STYLES[style]) return false;
   state.flameOutfit = style;
@@ -431,13 +514,37 @@ export function setFlameOutfit(style) {
   return true;
 }
 
-// ─── День рождения и дневной подарок ───────────────────────────────────────
+// ─── День рождения и дневной подарок v1.2.8 ─────────────────────────────────
+// birthday может быть YYYY-MM-DD или MM-DD; парсим устойчиво
+function _parseBirthday(bStr) {
+  if (!bStr || typeof bStr !== 'string') return null;
+  const s = bStr.trim();
+  if (!s) return null;
+  // поддержка YYYY-MM-DD
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  if (iso) {
+    const m = Number(iso[2]); const d = Number(iso[3]);
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) return { m: m - 1, d };
+  }
+  const md = /^(\d{1,2})-(\d{1,2})$/.exec(s);
+  if (md) {
+    const m = Number(md[1]); const d = Number(md[2]);
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) return { m: m - 1, d };
+  }
+  // fallback через Date
+  try {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return { m: d.getMonth(), d: d.getDate() };
+  } catch (e) {}
+  return null;
+}
+
 export function isBirthdayToday() {
   const b = state.user?.birthday;
-  if (!b) return false;
-  const d = new Date(b);
+  const parsed = _parseBirthday(b);
+  if (!parsed) return false;
   const n = new Date();
-  return d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+  return parsed.m === n.getMonth() && parsed.d === n.getDate();
 }
 export function shouldShowBirthday() {
   if (!isBirthdayToday()) return false;
@@ -454,10 +561,31 @@ export function isDailyGiftAvailable() {
 }
 export function claimDailyGift() {
   const today = todayStr();
-  if (state.dailyGiftDay === today) return false;
+  if (state.dailyGiftDay === today) return { ok: false, leveled: false, prev: state.streak, now: state.streak };
+  const prevStreak = state.streak || 0;
+  const prevLevel = _levelForStreak(prevStreak).level;
   state.dailyGiftDay = today;
-  // лёгкий буст стрика
+  // лёгкий буст стрика: если был 0 — становится 1; иначе если заходили вчера — уже учтётся в finishDate,
+  // а если пропустили — даём +1 как подарок за возвращение
   if (state.streak === 0) state.streak = 1;
+  else if (state.lastDateDay !== today) {
+    // бонусный день за ежедневный вход
+    const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+    if (state.lastDateDay !== yesterday) {
+      state.streak = Math.max(1, state.streak + 1);
+    }
+  }
   save();
-  return true;
+  const nowLevel = _levelForStreak(state.streak).level;
+  return { ok: true, leveled: nowLevel > prevLevel, prev: prevStreak, now: state.streak, prevLevel, nowLevel };
+}
+// удобный хелпер: сколько дней до ДР
+export function daysUntilBirthday() {
+  const b = _parseBirthday(state.user?.birthday);
+  if (!b) return null;
+  const now = new Date();
+  let next = new Date(now.getFullYear(), b.m, b.d);
+  if (next < now) next = new Date(now.getFullYear() + 1, b.m, b.d);
+  const diff = Math.ceil((next - now) / 864e5);
+  return diff;
 }
