@@ -5,7 +5,7 @@ import { relationOf } from './state.js';
 import { sound } from './audio.js';
 import { getSeason, seasonLine } from './seasons.js';
 import { chapterFor, chapterLine } from './chapters.js';
-import { askAI, aiEnabled } from './ai.js';
+import { askAI, aiEnabled, getLastAIError } from './ai.js';
 
 const ACTS = new Map(ACTS_LIST.map((a) => [a.id, a]));
 
@@ -308,12 +308,20 @@ export class ChatBrain {
     if (this.history.length > 40) this.history = this.history.slice(-40);
     if (a.topics.length) a.topics.forEach(t=>this.topics.add(t.id));
 
-    // только Groq, без шаблона (по просьбе)
+    // только Groq, без шаблона (по просьбе) — v1.3.4 с памятью хорошо/плохо/странно/ужасно
     const reply = await this._tryAI(text);
     if (reply) {
       this._say(this._emojiLine(reply), { emote: a.negative ? 'shy' : a.positive ? 'happy' : a.isQuestion ? 'think' : 'happy', ai: true });
     } else {
-      this._say('🤖 Groq сейчас недоступен в превью Arena (сеть закрыта). Локально: GROQ_API_KEY=... python3 server.py → http://localhost:8080 — там живой Llama 3.3. Он помнит что было хорошо/плохо/странно/ужасно.', { emote: 'think', emoji: '🤖', kind: 'system' });
+      const lastErr = getLastAIError ? getLastAIError() : null;
+      if (lastErr && lastErr.type === 'no_key') {
+        this._say('🤖 Groq ключ не задан. На Vercel: Settings → Environment Variables → GROQ_API_KEY=gsk_... → Redeploy. Локально: GROQ_API_KEY=... python3 server.py', { emote: 'think', emoji: '🤖', kind: 'system' });
+      } else if (lastErr && lastErr.type === 'groq_error') {
+        const det = (lastErr.detail||'').slice(0,200);
+        this._say(`🤖 Groq ошибка: ${det||'модель недоступна'}. Попробуй позже. На Vercel проверь ключ и логи функции /api/ai.`, { emote: 'think', emoji: '🤖', kind: 'system' });
+      } else {
+        this._say('🤖 Groq сейчас недоступен в превью Arena (сеть закрыта). Локально: GROQ_API_KEY=... python3 server.py → http://localhost:8080 — там живой Llama 3.3 (openai/gpt-oss-120b). Он помнит что было хорошо/плохо/странно/ужасно.', { emote: 'think', emoji: '🤖', kind: 'system' });
+      }
     }
   }
 

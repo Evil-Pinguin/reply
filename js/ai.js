@@ -21,6 +21,9 @@ const LATCH_MS = 60 * 1000;            // мёртвый эндпоинт не �
 // мёртвый /api/ai не долбился каждым сообщением, но при этом оживший
 // эндпоинт (или добавленный ключ) подхватывался без перезагрузки страницы.
 let memLatchUntil = 0;
+let lastError = null; // {type, detail}
+export function getLastAIError(){ return lastError; }
+function setLastError(type, detail){ lastError = {type, detail, at: Date.now()}; }
 
 export function getAIMode() {
   try {
@@ -94,9 +97,10 @@ async function postAI(payload) {
   if (!res.ok) return null;
   const data = await res.json().catch(() => ({}));
   if (!data.ok) {
-    if (data.error === 'no_key') return 'no_key';
-    if (data.error === 'groq_error') return null; // сеть/ключ — фолбэк на локальный мозг + защёлка
-    return null;
+    if (data.error === 'no_key') { setLastError('no_key', data.hint||''); return 'no_key'; }
+    if (data.error === 'groq_error') { setLastError('groq_error', data.detail||''); return { error:'groq_error', detail:data.detail||''}; }
+    setLastError(data.error||'unknown', data.detail||JSON.stringify(data).slice(0,200));
+    return { error: data.error||'unknown', detail: data.detail||'' };
   }
   return parseReply(data);
 }
@@ -153,9 +157,10 @@ async function getAI(payload) {
   if (!res.ok) return null;
   const data = await res.json().catch(() => ({}));
   if (!data.ok) {
-    if (data.error === 'no_key') return 'no_key';
-    if (data.error === 'groq_error') return null;
-    return null;
+    if (data.error === 'no_key') { setLastError('no_key', data.hint||''); return 'no_key'; }
+    if (data.error === 'groq_error') { setLastError('groq_error', data.detail||''); return { error:'groq_error', detail:data.detail||''}; }
+    setLastError(data.error||'unknown', data.detail||'');
+    return { error: data.error||'unknown', detail: data.detail||'' };
   }
   return parseReply(data);
 }
@@ -184,9 +189,16 @@ export async function askAI({ character, location, season, chapter, user, histor
   let reply = await postAI(payload);
   if (reply === null) reply = await getAI(payload); // fallback для прокси без POST
 
-  if (reply === 'no_key') return null;      // сервер жив, ключа нет — не защёлкиваем
+  if (reply === 'no_key') { setLastError('no_key',''); return null; }
+  if (reply && typeof reply === 'object' && reply.error) {
+    // groq_error или другая ошибка — защёлкиваем но сохраняем detail
+    if (reply.error === 'groq_error') { /* keep lastError */ }
+    latchUnavailable();
+    return null;
+  }
   if (reply) {
     clearLatch();
+    lastError = null;
     markAIUsed();
     return reply;
   }
