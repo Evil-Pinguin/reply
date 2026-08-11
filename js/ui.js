@@ -521,73 +521,31 @@ function openGoodNightModal() {
 }
 
 function renderSplash() {
-  let cur = 'dark';
-  try { cur = getTheme(); } catch(e) { cur = 'dark'; }
-  try {
   app.innerHTML = `
     <div class="screen splash">
       <div class="splash-glow"></div>
       <div class="logo-bubble">💬</div>
       <h1 class="logo-text">Reply</h1>
       <p class="splash-tag">Не чат.<br>Настоящее первое свидание.</p>
-      <div class="spinner" style="margin:16px auto;"></div>
-      <div style="display:flex; gap:8px; justify-content:center; margin:12px 0 4px; flex-wrap:wrap;" id="splashTheme">
-        <button class="theme-btn ${cur==='dark' ? 'sel' : ''}" data-t="dark">🌙 Тёмная</button>
-        <button class="theme-btn ${cur==='light' ? 'sel' : ''}" data-t="light">☀️ Светлая</button>
-        <button class="theme-btn ${cur==='auto' ? 'sel' : ''}" data-t="auto">⚙️ Авто</button>
-      </div>
       <button class="btn btn-primary btn-lg splash-cta ready">Начать</button>
       <p class="splash-sub">Место, где переписка становится воспоминанием</p>
-      <p style="font-size:11px; color:var(--mut); margin-top:8px;">v1.3.2 · крутится — значит живёт ✨</p>
     </div>`;
   const btn = $('.splash-cta');
-  try { setTimeout(() => { const b=$('.splash-cta'); if(b) b.classList.add('ready'); }, 100); } catch(e){}
-  try {
-    const themeBtns = $$('#splashTheme button');
-    themeBtns.forEach(b=>{
-      b.addEventListener('click', ()=>{
-        themeBtns.forEach(x=>x.classList.remove('sel'));
-        b.classList.add('sel');
-        try { setTheme(b.dataset.t); } catch(e){}
-        try { sound.pop(); } catch(e){}
-      });
-    });
-  } catch(e){}
-  try {
-    btn?.addEventListener('click', () => {
-      try { sound.like(); } catch(e){}
-      let st;
-      try { st = getState(); } catch(e){ st={onboarded:false}; }
-      if (st.onboarded) show('main');
-      else show('onboarding');
-    });
-  } catch(e){
-    app.addEventListener('click', ()=>{
-      let st;
-      try { st = getState(); } catch(e){ st={onboarded:false}; }
-      if (st.onboarded) show('main');
-      else show('onboarding');
-    }, {once:true});
-  }
-  } catch(e){
-    console.error('renderSplash failed', e);
-    try {
-      app.innerHTML = `
-        <div class="screen splash">
-          <div class="logo-bubble">💬</div>
-          <h1 class="logo-text">Reply</h1>
-          <p class="splash-tag">Не чат.<br>Настоящее первое свидание.</p>
-          <div class="spinner" style="margin:16px auto;"></div>
-          <button class="btn btn-primary btn-lg splash-cta ready" onclick="try{show('onboarding')}catch(e){location.reload()}">Начать</button>
-        </div>`;
-    } catch(e2){}
-  }
+  setTimeout(() => { const b=$('.splash-cta'); if(b) b.classList.add('ready'); }, 100);
+  btn?.addEventListener('click', () => {
+    try { sound.like(); } catch(e){}
+    let st;
+    try { st = getState(); } catch(e){ st={onboarded:false}; }
+    if (st.onboarded) show('main');
+    else show('onboarding');
+  });
 }
 
+// ─── ОНБОРДИНГ
 // ─── ОНБОРДИНГ ──────────────────────────────────────────────────────────────
 
 function renderOnboarding() {
-  const steps = 6; // v1.2.9: +1 шаг темы в самом начале
+  const steps = 5;
   let step = 0;
   
   // загрузка черновика из localStorage — v1.2.9: без предвыбора, чисто с нуля
@@ -628,39 +586,6 @@ function renderOnboarding() {
   };
 
   const stepsFn = [
-    // 0 — тема оформления (в самом начале, по просьбе)
-    () => {
-      const curTheme = getTheme();
-      body.innerHTML = `
-        <div class="ob-step">
-          <div class="ob-emoji big">🎨</div>
-          <h2>Выбери свой вайб</h2>
-          <p class="ob-sub">Тёмная, светлая или авто — поменяй в любой момент, но давай сразу под твой вкус</p>
-          <div class="theme-selector" id="obTheme" style="margin-top:12px;">
-            <button class="theme-btn ${curTheme==='dark' ? 'sel' : ''}" data-t="dark">🌙 Тёмная</button>
-            <button class="theme-btn ${curTheme==='light' ? 'sel' : ''}" data-t="light">☀️ Светлая</button>
-            <button class="theme-btn ${curTheme==='auto' ? 'sel' : ''}" data-t="auto">⚙️ Авто</button>
-          </div>
-          <div style="margin-top:16px; padding:12px 14px; border-radius:14px; background:var(--card); border:1px solid var(--stroke); font-size:12.5px; color:var(--mut);">
-            💡 Тему можно всегда поменять в ⚙️ Настройках. Сейчас выбери то, что приятнее глазу.
-          </div>
-          <div style="margin-top:18px; display:flex; gap:8px; justify-content:center;">
-            <span style="width:36px; height:36px; border-radius:12px; background:linear-gradient(135deg,#0a0c18,#141730); border:1px solid rgba(255,255,255,.1); display:grid; place-items:center;">🌙</span>
-            <span style="width:36px; height:36px; border-radius:12px; background:#f4f5f9; border:1px solid rgba(0,0,0,.1); display:grid; place-items:center;">☀️</span>
-            <span style="width:36px; height:36px; border-radius:12px; background:linear-gradient(135deg,#8b5cf6,#ec4899); display:grid; place-items:center;">🎨</span>
-          </div>
-        </div>`;
-      $$('#obTheme button', body).forEach((b)=>{
-        b.addEventListener('click', ()=>{
-          $$('#obTheme button', body).forEach(x=>x.classList.remove('sel'));
-          b.classList.add('sel');
-          setTheme(b.dataset.t);
-          sound.pop();
-          nextBtn.disabled=false;
-        });
-      });
-      nextBtn.disabled=false;
-    },
     // 1 — знакомство
     () => {
       body.innerHTML = `
