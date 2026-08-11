@@ -2123,7 +2123,7 @@ function tabProfile(tc) {
           <div class="ps"><b>${achievements}</b><span>Наград</span></div>
           <div class="ps"><b>${st.streak}</b><span>Серия 🔥</span></div>
         </div>
-        ${(() => { const f = getFlame(); return `
+        ${(() => { const f = getFlame(); const barW = f.nextThreshold ? `${f.progress}%` : '100%'; return `
                 <div class="flame-wrap" id="flameWrap" title="Нажми чтобы одеть огонёк" style="cursor:pointer; display:flex; flex-direction:column; gap:10px; padding:16px; background:linear-gradient(160deg, rgba(251,146,60,.14), rgba(251,191,36,.10)); border:1px solid rgba(251,146,60,.22); border-radius:22px; margin:14px 0; align-items:center; text-align:center;">
           <div style="display:flex; align-items:center; gap:12px; width:100%; justify-content:center; flex-wrap:wrap;">
             <div class="flame-emoji" style="font-size:36px; filter: drop-shadow(0 6px 16px rgba(251,146,60,.45)); animation: flamePulse 2.2s ease-in-out infinite;">${f.icon}</div>
