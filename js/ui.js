@@ -845,6 +845,7 @@ function renderMain(opts = {}) {
 // ─── ТАБ: ЛЮДИ (свайпы) ─────────────────────────────────────────────────────
 
 function tabDiscover(tc) {
+  try {
   const st = getState();
   const daily = getDailySurprise();
   const f = getFilters();
@@ -1038,6 +1039,10 @@ function tabDiscover(tc) {
   };
 
   renderDeck();
+  } catch(e){
+    console.error('tabDiscover failed', e);
+    tc.innerHTML = `<div style="padding:20px; text-align:center;"><p>Ошибка загрузки ленты: ${String(e.message).slice(0,200)}</p><button class="btn btn-primary" onclick="location.reload()">Обновить</button></div>`;
+  }
 }
 
 // ─── МЭТЧ ───────────────────────────────────────────────────────────────────
@@ -2087,6 +2092,7 @@ function tabCollections(tc) {
 // ─── ТАБ: ПРОФИЛЬ ───────────────────────────────────────────────────────────
 
 function tabProfile(tc) {
+  try {
   const st = getState();
   const u = st.user;
   const datesCount = st.dates.length;
@@ -2236,6 +2242,10 @@ function tabProfile(tc) {
   function compatTop() {
     if (!st.matched.length) return '—';
     return Math.max(...st.matched.map((id) => compatibilityWith(id))) + '%';
+  }
+  } catch(e){
+    console.error('tabProfile failed', e);
+    tc.innerHTML = `<div style="padding:20px; text-align:center;"><p>Ошибка профиля: ${String(e.message).slice(0,300)}</p><pre style="font-size:10px; text-align:left; background:var(--card); padding:10px; border-radius:8px; overflow:auto;">${String(e.stack||'').slice(0,500)}</pre><button class="btn btn-primary" onclick="location.reload()">Обновить</button></div>`;
   }
 }
 
