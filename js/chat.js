@@ -35,6 +35,7 @@ const TOPIC_DEFS = [
 const INTENT_RE = {
   greet: /(привет|здравств|салют|добрый вечер|добрый день|доброе утро|рад тебя видеть|хай|йо|ку)/i,
   howareyou: /(как ты|как дела|как настроение|как жизнь|что нового|как ты вообще|как проходит твой)/i,
+  name: /(как тебя зовут|как твое имя|как зовут|кто ты|ты кто|твое имя|как тебя называть)/i,
   compliment: /(красив|мил|симпатич|прекрасн|нравишься|очаровательн|обворожительн|шикарн|потрясн|классно выглядишь|ты такая|ты такой|у тебя красивые|обалден)/i,
   thanks: /(спасибо|благодар|выручил|мило с твоей стороны)/i,
   sorry: /(прости|извини|виноват|неловко|ляпнул)/i,
@@ -259,89 +260,84 @@ export class ChatBrain {
     return false;
   }
 
-  // ── анализ и композиция ответа ────────────────────────────────────────────
+  // ── анализ и композиция ответа v1.3.3: коротко и связно ────────────────
   _compose(a, text) {
     if (this._isGibberish(text, a)) {
       return this._pickNoRepeat([
-        'Хм, похоже клавиатура убежала 😄 Напишешь по-человечески?',
-        'Это шифр? Я люблю загадки, но подскажи чуть-чуть 😉',
-        'Похоже на заклинание из Геншина ✨ Переведёшь?',
-        'Ой, не разобрал — можешь ещё раз, но словами?',
-        'Т9 шалит? Попробуй ещё раз, я внимательно слушаю',
+        'Ой, не разобрал — напишешь ещё раз словами? 😊',
+        'Похоже клавиатура убежала — повтори, пожалуйста?',
+        'Т9 шалит? Напиши ещё раз, я внимательно слушаю',
       ], 'gib');
     }
-    const parts = [];
     const views = this.char.views || {};
     const top = a.topics[0];
 
-    // открывающая фраза по тону
-    let opener;
-    if (a.negative) opener = this._pickNoRepeat(OPENER_NEG, 'op-neg');
-    else if (a.positive) opener = this._pickNoRepeat(OPENER_POS, 'op-pos');
-    else if (a.isQuestion) opener = this._pickNoRepeat(OPENER_Q, 'op-q');
-    else opener = this._pickNoRepeat(OPENER_NEUTRAL, 'op-n');
-    parts.push(opener);
-
-    // личный взгляд персонажа по теме (или общий)
+    // 1. основной контент — один взгляд по теме, без нагромождения
     let content = null;
-    if (top && views[top.id]) content = this._pickNoRepeat(views[top.id], 'view-' + top.id);
-    else if (top && BOT.topics[top.id]) content = pick(BOT.topics[top.id]);
-    else if (top && GENERIC_TOPIC[top.id]) content = this._pickNoRepeat(GENERIC_TOPIC[top.id], 'gen-' + top.id);
-    if (content) {
-      parts.push(this._emojiLine(content));
+    if (top && views[top.id]) {
+      content = this._pickNoRepeat(views[top.id], 'view-' + top.id);
       this.topics.add(top.id);
-    } else if (!top && chance(0.35)) {
-      // нет темы — иногда подкинуть случайный взгляд, чтобы не быть пустым
-      const allViews = Object.values(views).flat();
-      if (allViews.length) parts.push(this._emojiLine(this._pickNoRepeat(allViews, 'view-rand')));
-    }
-
-    // живой мир: иногда заметить сезон или главу истории
-    if (chance(0.1) && !(top && top.id === 'weather')) {
-      parts.push(this._emojiLine(seasonLine()));
-    } else if (chance(0.08)) {
-      parts.push(this._emojiLine(chapterLine(this.char.id).line));
-    }
-
-    // если пользователь поделился личным — отреагировать с интересом
-    if (a.personal && !a.isQuestion && chance(0.7)) {
-      const reacts = [
-        'Спасибо, что делишься этим со мной',
-        'Мне правда интересно то, что ты рассказываешь',
-        'Я чувствую, что это важно для тебя',
-        'Хочу знать о тебе ещё больше',
-      ];
-      parts.push(this._pickNoRepeat(reacts, 'pers'));
-    }
-
-    // сочувствие
-    if (a.negative && chance(0.8)) {
-      const warm = [
-        'Если захочешь выговориться — я рядом',
-        'Может, согреть тебе настроение?',
-        'Хорошо, что ты это рассказываешь, а не держишь в себе',
-      ];
-      parts.push(this._pickNoRepeat(warm, 'warm'));
-      this._addStat('trust', 1);
-    }
-
-    // вопрос в ответ — теперь без null
-    if (a.isQuestion || chance(this.person.talk * 0.75)) {
-      let fu;
-      if (top) {
-        fu = chance(0.65) ? pick(FOLLOWUPS_TOPIC) : pick(FOLLOWUPS_GENERIC);
-        const line = fu(top.nom);
-        if (line && !line.includes('null') && !line.includes('undefined')) parts.push(line);
-        else parts.push(pick(FOLLOWUPS_GENERIC)());
-      } else {
-        fu = pick(FOLLOWUPS_GENERIC);
-        parts.push(fu());
+    } else if (top && BOT.topics[top.id]) {
+      content = pick(BOT.topics[top.id]);
+    } else if (top && GENERIC_TOPIC[top.id]) {
+      content = this._pickNoRepeat(GENERIC_TOPIC[top.id], 'gen-' + top.id);
+    } else {
+      // нет темы — иногда дать один случайный взгляд, не всегда
+      if (chance(0.25)) {
+        const allViews = Object.values(views).flat();
+        if (allViews.length) content = this._pickNoRepeat(allViews, 'view-rand');
       }
     }
 
-    let reply = parts.filter(Boolean).join(' ');
-    // иногда многоточия и вставные «ну», «слушай»
-    if (chance(0.15) && !a.isQuestion) reply = 'Слушай, ' + reply.charAt(0).toLowerCase() + reply.slice(1);
+    // 2. если контента нет — используем короткие нейтральные фразы
+    if (!content) {
+      if (a.negative) {
+        content = this._pickNoRepeat(OPENER_NEG, 'op-neg');
+        this._addStat('trust', 1);
+      } else if (a.isQuestion) {
+        content = this._pickNoRepeat(OPENER_Q, 'op-q');
+      } else {
+        content = this._pickNoRepeat(OPENER_NEUTRAL, 'op-n');
+      }
+    }
+
+    // 3. иногда (5%) добавить сезон/главу, но только если нет темы погоды и как отдельное предложение
+    let extra = null;
+    if (!top && chance(0.05)) {
+      extra = this._pickNoRepeat([seasonLine(), chapterLine(this.char.id).line], 'extra-'+this.char.id);
+    }
+
+    // 4. вопрос в ответ — только один, и только если уместно
+    let follow = null;
+    if (a.isQuestion || chance(this.person.talk * 0.45)) {
+      if (top) {
+        const fu = chance(0.6) ? pick(FOLLOWUPS_TOPIC) : pick(FOLLOWUPS_GENERIC);
+        const line = fu(top.nom);
+        if (line && !/null|undefined/.test(line)) follow = line;
+      } else {
+        follow = pick(FOLLOWUPS_GENERIC)();
+      }
+    }
+
+    // 5. собираем 1-2 предложения максимум, связно
+    let parts = [];
+    if (content) parts.push(content);
+    if (extra && chance(0.5) && parts.length < 2) parts.push(extra);
+    if (follow && parts.length < 2) {
+      // если уже есть контент, добавляем follow как второе предложение
+      parts.push(follow);
+    }
+
+    let reply = parts.filter(Boolean).join(' ').trim();
+    // защита от дублирования одинаковых фраз
+    reply = reply.replace(/\s+/g, ' ').trim();
+    // финальная чистка от null
+    if (!reply || /null|undefined/i.test(reply)) {
+      reply = this._pickNoRepeat(OPENER_NEUTRAL, 'op-n');
+    }
+    // ограничим длину — максимум 2 коротких предложения
+    const sentences = reply.split(/(?<=[.!?])\s+/);
+    if (sentences.length > 2) reply = sentences.slice(0,2).join(' ');
     return reply;
   }
 
@@ -391,8 +387,29 @@ export class ChatBrain {
     let local = null;
     let emote = a.negative ? 'shy' : a.positive ? 'happy' : a.isQuestion ? 'think' : 'happy';
 
+    // как зовут — отвечаем именем персонажа
+    if (INTENT_RE.name.test(lower)) {
+      const name = this.char.name || 'я';
+      local = this._pickNoRepeat([
+        `Меня зовут ${name} 😊 А тебя как?`,
+        `Я — ${name}. Приятно познакомиться!`,
+        `${name} — так меня зовут. А как к тебе обращаться?`,
+      ], 'loc-name');
+      emote = 'happy';
+      this._addStat('trust', 1);
+    }
+    // если упомянуто имя персонажа в сообщении — откликаемся
+    else if (lower.includes(this.char.name.toLowerCase())) {
+      local = this._pickNoRepeat([
+        `Да, это я — ${this.char.name} 😊 Ты меня звал(а)?`,
+        `Ага, ${this.char.name} на связи! Что хотел(а) сказать?`,
+        `Услышал(а) своё имя — сразу улыбнулся(лась)`,
+      ], 'loc-mention');
+      emote = 'happy';
+      this._addStat('sympathy', 1);
+    }
     // приветствия
-    if (INTENT_RE.greet.test(lower)) {
+    else if (INTENT_RE.greet.test(lower)) {
       const g = this._pickNoRepeat([
         'Привет! Я уже тут и улыбаюсь, увидев тебя 😊',
         'Привееет! Как же я рада, что ты написал(а)',

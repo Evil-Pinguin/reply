@@ -2158,7 +2158,7 @@ function tabProfile(tc) {
             ${Object.keys(MBTI_INFO).map(t=>{
               const inf=MBTI_INFO[t];
               const sel=t===(u.mbti||'ENFP');
-              return `<button class="mbti-card ${sel?'sel':''}" data-mbti="${t}" style="padding:8px 4px; font-size:11px; ${sel?'border-color:#ff5e7e;':''}"><span class="mbti-code" style="font-size:11px;">${t}</span><span style="font-size:9px; color:var(--mut);">${inf.name.slice(0,8)}</span></button>`;
+              return '<button class="mbti-card ' + (sel?'sel':'') + '" data-mbti="' + t + '" style="padding:8px 4px; font-size:11px;' + (sel?'border-color:#ff5e7e;':'') + '"><span class="mbti-code" style="font-size:11px;">' + t + '</span><span style="font-size:9px; color:var(--mut);">' + inf.name.slice(0,8) + '</span></button>';
             }).join('')}
           </div>
         </div>
