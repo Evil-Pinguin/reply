@@ -375,15 +375,134 @@ export class ChatBrain {
     this.history.push({ role: 'user', text });
     if (this.history.length > 40) this.history = this.history.slice(-40);
 
-    // ── генеративный ответ: только внешний ИИ (Groq), шаблон убран по просьбе ──
-    let reply = await this._tryAI(text);
-    if (reply !== null) {
-      this._say(this._emojiLine(reply), { emote: a.negative ? 'shy' : a.positive ? 'happy' : a.isQuestion ? 'think' : 'happy', ai: true });
-    } else {
-      // в превью Arena сеть к Groq закрыта → честно говорим, не шаблоним
-      this._say('🤖 Groq сейчас недоступен в превью Arena (сеть закрыта). Запусти локально: GROQ_API_KEY=... python3 server.py → http://localhost:8080 — там отвечает Llama 3.3', { emote: 'think', emoji: '🤖', kind: 'system' });
+    // ── v1.2.8: гибридный мозг — сначала пробуем Groq, затем локальный ──
+    // попытка внешнего ИИ (если включен)
+    let aiReply = await this._tryAI(text);
+    if (aiReply !== null) {
+      this._say(this._emojiLine(aiReply), { emote: a.negative ? 'shy' : a.positive ? 'happy' : a.isQuestion ? 'think' : 'happy', ai: true });
+      this._scheduleSecond(a);
+      if (chance(0.18)) this._remember(a);
       return;
     }
+
+    // ── локальный мозг (работает в превью Arena, без сети к Groq) ──
+    // интент-специфичные ответы — живые, без шаблонного «null»
+    const lower = text.toLowerCase();
+    let local = null;
+    let emote = a.negative ? 'shy' : a.positive ? 'happy' : a.isQuestion ? 'think' : 'happy';
+
+    // приветствия
+    if (INTENT_RE.greet.test(lower)) {
+      const g = this._pickNoRepeat([
+        'Привет! Я уже тут и улыбаюсь, увидев тебя 😊',
+        'Привееет! Как же я рада, что ты написал(а)',
+        'Хай! Мы будто только начали, а уже так тепло',
+        'Здравствуй! Сижу, жду твоего сообщения — и вот оно',
+      ], 'loc-greet');
+      local = g + (a.positive ? ' Какое у тебя настроение сегодня?' : '');
+      emote = 'happy';
+      this._addStat('comfort', 1);
+    }
+    // как дела
+    else if (INTENT_RE.howareyou.test(lower)) {
+      const v = this.char.views ? Object.values(this.char.views).flat() : [];
+      const moodLine = v.length ? this._pickNoRepeat(v, 'loc-how') : this._pickNoRepeat([
+        'У меня сегодня такой уютный вечер — и ты его делаешь лучше',
+        'Чуть волнуюсь, но рядом с тобой спокойно',
+        'Настроение — как наш плейлист: тёплое и чуть задумчивое',
+      ], 'loc-how');
+      local = moodLine + ' А ты как? Как твой день прошёл?';
+      emote = 'think';
+      this._addStat('trust', 1);
+    }
+    // комплименты
+    else if (INTENT_RE.compliment.test(lower)) {
+      local = this._pickNoRepeat(BOT.reactions.compliment || [
+        'Спасибо… ты меня смущаешь 😳 Это очень приятно',
+        'Ой, я покраснел(а). Говори ещё, я записываю',
+        'Ты умеешь говорить так, что хочется улыбаться всю ночь',
+      ], 'loc-comp');
+      emote = 'blush';
+      this._addStat('romance', 2);
+      this._addStat('sympathy', 1);
+    }
+    // спасибо
+    else if (INTENT_RE.thanks.test(lower)) {
+      local = this._pickNoRepeat([
+        'Тебе спасибо — мне приятно делиться этим с тобой',
+        'Всегда пожалуйста. Мне правда важно то, что ты говоришь',
+        'Спасибо, что ты рядом. Это больше, чем слова',
+      ], 'loc-thx');
+      emote = 'happy';
+      this._addStat('trust', 1);
+    }
+    // извинения
+    else if (INTENT_RE.sorry.test(lower)) {
+      local = this._pickNoRepeat(BOT.reactions.sorry || [
+        'Всё в порядке, не переживай 😊',
+        'Даже не думай об этом — ты же со мной честен',
+        'Мы все иногда говорим невпопад. Главное, что мы говорим',
+      ], 'loc-sorry') + ' Давай просто продолжим?';
+      emote = 'shy';
+      this._addStat('trust', 1);
+    }
+    // любовь / флирт
+    else if (INTENT_RE.love.test(lower)) {
+      local = this._pickNoRepeat([
+        'Ты… это серьёзно? У меня сейчас сердце громче музыки',
+        'Ого. Это самое смелое, что я слышал(а) сегодня — и самое приятное',
+        'Я… не ожидал(а). Но если честно — мне это очень приятно ❤️',
+      ], 'loc-love');
+      emote = 'love';
+      this._addStat('romance', 3);
+      this._addStat('trust', 2);
+    }
+    else if (INTENT_RE.flirt.test(lower)) {
+      local = this._pickNoRepeat([
+        'Ты умеешь заставить покраснеть одним сообщением 😳',
+        'Скучал(а)? Я тоже — даже когда мы просто молчим рядом',
+        'Обнимемся мысленно? Я уже представляю, как это тепло',
+      ], 'loc-flirt');
+      emote = 'blush';
+      this._addStat('romance', 2);
+    }
+    // шутки
+    else if (INTENT_RE.joke.test(lower)) {
+      local = this._pickNoRepeat(BOT.reactions.joke || [
+        'Ахах, я чуть не рассмеялась в голос тут, за столиком 😂',
+        'Твои шутки опасны — я теперь улыбаюсь без причины',
+        'Окей, это официально смешно. Заношу в цитаты',
+      ], 'loc-joke');
+      emote = 'laugh';
+      this._addStat('humor', 2);
+    }
+    // прощание
+    else if (INTENT_RE.bye.test(lower)) {
+      local = this._pickNoRepeat([
+        'Уже уходишь? Мне было так хорошо, что время пролетело',
+        'Пока… Спасибо за этот вечер. Он точно останется в памяти',
+        'До встречи! Я буду думать о нашем разговоре',
+      ], 'loc-bye');
+      emote = 'happy';
+      this._addStat('comfort', 1);
+    }
+
+    if (!local) {
+      local = this._compose(a, text);
+    }
+
+    // финальная защита от «null» / «undefined» в тексте
+    if (!local || /null|undefined/i.test(local)) {
+      local = this._pickNoRepeat([
+        'Мне правда интересно то, что ты рассказываешь — продолжи?',
+        'Слушай, а расскажи подробнее? Я внимательно слушаю',
+        'Звучит так, будто за этим есть история. Расскажешь?',
+      ], 'loc-fallback');
+    }
+
+    this._say(this._emojiLine(local), { emote, emoji: a.positive ? '✨' : a.negative ? '💭' : '' });
+    this._scheduleSecond(a);
+    if (chance(0.22)) this._remember(a);
   }
 
   // вторая короткая реплика — как живой человек, который дописывает
